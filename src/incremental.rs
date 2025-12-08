@@ -127,9 +127,7 @@ impl IncrementalIndexer {
     /// Remove a file from the index.
     pub fn remove_file(&self, state: &OciState, path: &Path) {
         state.clear_file(&path.to_path_buf());
-        self.topology_builder
-            .remove_file(state, path)
-            .ok();
+        self.topology_builder.remove_file(state, path).ok();
     }
 }
 

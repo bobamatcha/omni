@@ -89,12 +89,7 @@ impl LanguageParser for RustParser {
         Ok(calls)
     }
 
-    fn extract_imports(
-        &self,
-        tree: &Tree,
-        source: &str,
-        file: &Path,
-    ) -> Result<Vec<ImportInfo>> {
+    fn extract_imports(&self, tree: &Tree, source: &str, file: &Path) -> Result<Vec<ImportInfo>> {
         let bytes = source.as_bytes();
         let root = tree.root_node();
 
@@ -243,7 +238,8 @@ fn extract_visibility(bytes: &[u8], node: Node) -> Visibility {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "visibility_modifier" {
-            if let Ok(vis_text) = std::str::from_utf8(&bytes[child.start_byte()..child.end_byte()]) {
+            if let Ok(vis_text) = std::str::from_utf8(&bytes[child.start_byte()..child.end_byte()])
+            {
                 let vis = vis_text.trim();
                 if vis == "pub" {
                     return Visibility::Public;
@@ -269,7 +265,8 @@ fn extract_signature(bytes: &[u8], fn_node: Node) -> Signature {
         let mut cursor = params_node.walk();
         for child in params_node.children(&mut cursor) {
             if child.kind() == "parameter" || child.kind() == "self_parameter" {
-                if let Ok(text) = std::str::from_utf8(&bytes[child.start_byte()..child.end_byte()]) {
+                if let Ok(text) = std::str::from_utf8(&bytes[child.start_byte()..child.end_byte()])
+                {
                     sig.params.push(text.trim().to_string());
                 }
             }
@@ -734,12 +731,7 @@ fn walk_rust_calls(
 // Import Extraction Walker
 // ============================================================================
 
-fn walk_rust_imports(
-    node: Node,
-    bytes: &[u8],
-    file: &Path,
-    imports: &mut Vec<ImportInfo>,
-) {
+fn walk_rust_imports(node: Node, bytes: &[u8], file: &Path, imports: &mut Vec<ImportInfo>) {
     let kind = node.kind();
 
     if kind == "use_declaration" {
@@ -792,8 +784,12 @@ fn extract_use_tree(
             // Use with alias: use foo as bar;
             if let Some(path_node) = node.child_by_field_name("path") {
                 if let Some(alias_node) = node.child_by_field_name("alias") {
-                    if let Ok(path_text) = std::str::from_utf8(&bytes[path_node.start_byte()..path_node.end_byte()]) {
-                        if let Ok(alias_text) = std::str::from_utf8(&bytes[alias_node.start_byte()..alias_node.end_byte()]) {
+                    if let Ok(path_text) =
+                        std::str::from_utf8(&bytes[path_node.start_byte()..path_node.end_byte()])
+                    {
+                        if let Ok(alias_text) = std::str::from_utf8(
+                            &bytes[alias_node.start_byte()..alias_node.end_byte()],
+                        ) {
                             let full_path = if prefix.is_empty() {
                                 path_text.to_string()
                             } else {
@@ -821,8 +817,8 @@ fn extract_use_tree(
 
             // Case 1: use_wildcard contains the path directly (e.g., "super::*")
             // Extract path by getting everything except :: and *
-            let full_text = std::str::from_utf8(&bytes[node.start_byte()..node.end_byte()])
-                .unwrap_or("");
+            let full_text =
+                std::str::from_utf8(&bytes[node.start_byte()..node.end_byte()]).unwrap_or("");
             if full_text.ends_with("::*") {
                 let path_part = &full_text[..full_text.len() - 3]; // Remove "::*"
                 let full_path = if prefix.is_empty() {
@@ -848,7 +844,9 @@ fn extract_use_tree(
                         if let Some(grandparent) = parent.parent() {
                             if grandparent.kind() == "scoped_use_list" {
                                 if let Some(path_node) = grandparent.child_by_field_name("path") {
-                                    if let Ok(path_text) = std::str::from_utf8(&bytes[path_node.start_byte()..path_node.end_byte()]) {
+                                    if let Ok(path_text) = std::str::from_utf8(
+                                        &bytes[path_node.start_byte()..path_node.end_byte()],
+                                    ) {
                                         let full_path = if prefix.is_empty() {
                                             path_text.to_string()
                                         } else {
@@ -870,7 +868,9 @@ fn extract_use_tree(
                     // use super::*; - direct scoped_use_list
                     else if parent.kind() == "scoped_use_list" {
                         if let Some(path_node) = parent.child_by_field_name("path") {
-                            if let Ok(path_text) = std::str::from_utf8(&bytes[path_node.start_byte()..path_node.end_byte()]) {
+                            if let Ok(path_text) = std::str::from_utf8(
+                                &bytes[path_node.start_byte()..path_node.end_byte()],
+                            ) {
                                 let full_path = if prefix.is_empty() {
                                     path_text.to_string()
                                 } else {
@@ -904,7 +904,9 @@ fn extract_use_tree(
         "scoped_use_list" => {
             // Nested use: use foo::{bar, baz};
             if let Some(path_node) = node.child_by_field_name("path") {
-                if let Ok(path_text) = std::str::from_utf8(&bytes[path_node.start_byte()..path_node.end_byte()]) {
+                if let Ok(path_text) =
+                    std::str::from_utf8(&bytes[path_node.start_byte()..path_node.end_byte()])
+                {
                     let new_prefix = if prefix.is_empty() {
                         path_text.to_string()
                     } else {

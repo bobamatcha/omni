@@ -47,8 +47,7 @@ impl SemanticIndex {
     pub fn new() -> Result<Self> {
         // Initialize the embedding model (all-MiniLM-L6-v2)
         let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-                .with_show_download_progress(false),
+            InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(false),
         )
         .context("Failed to initialize embedding model")?;
 

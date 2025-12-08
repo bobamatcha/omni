@@ -7,9 +7,9 @@ use crate::parsing::parser_for_file;
 use crate::state::OciState;
 use crate::types::*;
 use anyhow::{Context, Result};
+use petgraph::Direction;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -49,9 +49,7 @@ impl TopologyBuilder {
             })
         };
 
-        state
-            .path_to_node
-            .insert(root.to_path_buf(), root_node);
+        state.path_to_node.insert(root.to_path_buf(), root_node);
 
         // Initialize metrics for root
         state
@@ -171,9 +169,7 @@ impl TopologyBuilder {
                 // Sum contributions from incoming edges
                 for edge in graph.edges_directed(node_idx, Direction::Incoming) {
                     let source = edge.source();
-                    let out_degree = graph
-                        .edges_directed(source, Direction::Outgoing)
-                        .count();
+                    let out_degree = graph.edges_directed(source, Direction::Outgoing).count();
 
                     if out_degree > 0 {
                         let source_score = scores.get(&source).copied().unwrap_or(0.0);
@@ -218,12 +214,7 @@ impl TopologyBuilder {
     }
 
     /// Connect a file node to its parent module or crate.
-    fn connect_to_parent(
-        &self,
-        state: &OciState,
-        path: &Path,
-        file_node: NodeIndex,
-    ) -> Result<()> {
+    fn connect_to_parent(&self, state: &OciState, path: &Path, file_node: NodeIndex) -> Result<()> {
         // Find parent by traversing up the directory tree
         let mut current_path = path.parent();
         let mut parent_node = None;
@@ -293,8 +284,8 @@ impl TopologyBuilder {
     /// Parse imports from a file and store them.
     fn parse_file_imports(&self, state: &OciState, path: &Path, file_id: FileId) -> Result<()> {
         // Read file contents
-        let source = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read file: {:?}", path))?;
+        let source =
+            fs::read_to_string(path).with_context(|| format!("Failed to read file: {:?}", path))?;
 
         // Get parser for the file
         let lang_parser = match parser_for_file(path) {

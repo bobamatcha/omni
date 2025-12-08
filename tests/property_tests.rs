@@ -2,10 +2,10 @@
 //!
 //! Uses proptest to generate random inputs and verify invariants hold.
 
-use omni_index::*;
-use omni_index::topology::TopologyBuilder;
-use omni_index::parsing::rust::RustParser;
 use omni_index::parsing::LanguageParser;
+use omni_index::parsing::rust::RustParser;
+use omni_index::topology::TopologyBuilder;
+use omni_index::*;
 use proptest::prelude::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -17,7 +17,14 @@ use std::path::PathBuf;
 /// Generate valid Rust identifiers
 fn rust_identifier() -> impl Strategy<Value = String> {
     "[a-z][a-z0-9_]{0,20}".prop_filter("must be valid identifier", |s| {
-        !s.is_empty() && !["fn", "let", "mut", "pub", "struct", "enum", "impl", "trait", "use", "mod", "const", "static", "async", "await", "self", "super", "crate", "where", "for", "in", "if", "else", "match", "loop", "while", "break", "continue", "return", "type", "as", "ref", "move", "dyn", "true", "false"].contains(&s.as_str())
+        !s.is_empty()
+            && ![
+                "fn", "let", "mut", "pub", "struct", "enum", "impl", "trait", "use", "mod",
+                "const", "static", "async", "await", "self", "super", "crate", "where", "for",
+                "in", "if", "else", "match", "loop", "while", "break", "continue", "return",
+                "type", "as", "ref", "move", "dyn", "true", "false",
+            ]
+            .contains(&s.as_str())
     })
 }
 
@@ -45,34 +52,34 @@ fn function_signature() -> impl Strategy<Value = String> {
         rust_identifier(),
         prop::collection::vec(
             (rust_identifier(), type_name()).prop_map(|(n, t)| format!("{}: {}", n, t)),
-            0..=3
+            0..=3,
         ),
         prop::option::of(type_name()),
-    ).prop_map(|(name, params, ret)| {
-        let mut sig = String::from("fn ");
-        sig.push_str(&name);
-        sig.push('(');
-        sig.push_str(&params.join(", "));
-        sig.push(')');
-        if let Some(ret_type) = ret {
-            sig.push_str(" -> ");
-            sig.push_str(&ret_type);
-        }
-        sig
-    })
+    )
+        .prop_map(|(name, params, ret)| {
+            let mut sig = String::from("fn ");
+            sig.push_str(&name);
+            sig.push('(');
+            sig.push_str(&params.join(", "));
+            sig.push(')');
+            if let Some(ret_type) = ret {
+                sig.push_str(" -> ");
+                sig.push_str(&ret_type);
+            }
+            sig
+        })
 }
 
 /// Generate file paths
 fn file_path() -> impl Strategy<Value = PathBuf> {
-    prop::collection::vec(rust_identifier(), 1..=3)
-        .prop_map(|parts| {
-            let mut path = PathBuf::from("src");
-            for part in parts {
-                path.push(part);
-            }
-            path.set_extension("rs");
-            path
-        })
+    prop::collection::vec(rust_identifier(), 1..=3).prop_map(|parts| {
+        let mut path = PathBuf::from("src");
+        for part in parts {
+            path.push(part);
+        }
+        path.set_extension("rs");
+        path
+    })
 }
 
 // ============================================================================

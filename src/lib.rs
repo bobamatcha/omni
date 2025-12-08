@@ -36,28 +36,28 @@
 //! let results = state.find_by_name("my_function");
 //! ```
 
-pub mod types;
-pub mod state;
 pub mod discovery;
-pub mod parsing;
-pub mod topology;
 pub mod incremental;
+pub mod parsing;
+pub mod state;
+pub mod topology;
+pub mod types;
 
 // Phase 3+
-pub mod semantic;
 pub mod analysis;
-pub mod intervention;
 pub mod context;
+pub mod intervention;
 pub mod mcp;
+pub mod semantic;
 
 // Re-exports
-pub use types::*;
-pub use state::{OciState, SharedState, create_state, IndexStats};
+pub use analysis::DeadCodeAnalyzer;
+pub use context::{ContextChunk, ContextQuery, ContextResult, ContextSynthesizer};
 pub use discovery::FileDiscovery;
 pub use incremental::IncrementalIndexer;
-pub use analysis::DeadCodeAnalyzer;
 pub use intervention::InterventionEngine;
-pub use context::{ContextSynthesizer, ContextQuery, ContextResult, ContextChunk};
+pub use state::{IndexStats, OciState, SharedState, create_state};
+pub use types::*;
 
 /// Server name for MCP.
 pub const SERVER_NAME: &str = "omni-index";

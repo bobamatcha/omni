@@ -3,8 +3,8 @@
 //! Discovers source files in a repository while respecting .gitignore rules.
 
 use anyhow::Result;
-use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
+use ignore::overrides::OverrideBuilder;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -64,12 +64,12 @@ impl FileDiscovery {
 
         // Build walker with .gitignore support
         let walker = WalkBuilder::new(root)
-            .hidden(false)           // Skip hidden files by default
-            .git_ignore(true)        // Respect .gitignore
-            .git_global(true)        // Respect global gitignore
-            .git_exclude(true)       // Respect .git/info/exclude
-            .require_git(false)      // Parse .gitignore even without .git directory
-            .overrides(overrides)    // Apply our override patterns
+            .hidden(false) // Skip hidden files by default
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .require_git(false) // Parse .gitignore even without .git directory
+            .overrides(overrides) // Apply our override patterns
             .build();
 
         // Collect files matching our extension filter

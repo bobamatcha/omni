@@ -223,10 +223,7 @@ impl CoverageAnalyzer {
     ///
     /// For each symbol, this finds the file and line range, checks which lines
     /// are covered, and calculates coverage metrics.
-    pub fn correlate_symbols(
-        state: &OciState,
-        coverage: &CoverageData,
-    ) -> Vec<SymbolCoverage> {
+    pub fn correlate_symbols(state: &OciState, coverage: &CoverageData) -> Vec<SymbolCoverage> {
         let mut results = Vec::new();
 
         // Iterate over all symbols
@@ -388,8 +385,7 @@ mod tests {
 
         // Add a test symbol
         let file_path = PathBuf::from("/path/to/src/main.rs");
-        let location = Location::new(file_path.clone(), 0, 100)
-            .with_positions(10, 0, 15, 0);
+        let location = Location::new(file_path.clone(), 0, 100).with_positions(10, 0, 15, 0);
 
         let name = state.intern("test_function");
         let scoped = state.intern("crate::test_function");

@@ -70,6 +70,7 @@ pretty_assertions = "1"
 criterion = { version = "0.5", features = ["async_tokio"] }
 proptest = "1.4"
 proptest-derive = "0.5"
+walkdir = "2"
 
 [[bench]]
 name = "indexing"

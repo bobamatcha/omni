@@ -82,10 +82,7 @@ impl ContextResult {
 
     /// Get all chunks in priority order (primary first, then related).
     pub fn all_chunks(&self) -> Vec<&ContextChunk> {
-        self.primary
-            .iter()
-            .chain(self.related.iter())
-            .collect()
+        self.primary.iter().chain(self.related.iter()).collect()
     }
 }
 
@@ -159,11 +156,7 @@ impl ContextSynthesizer {
             let callers = state.find_callers(current_name);
             for call_edge in callers.iter().take(5) {
                 // Limit callers to avoid explosion
-                candidates.push((
-                    call_edge.caller,
-                    0.6,
-                    format!("Calls {}", current_name),
-                ));
+                candidates.push((call_edge.caller, 0.6, format!("Calls {}", current_name)));
             }
 
             // Find related types (from signatures)
@@ -184,11 +177,7 @@ impl ContextSynthesizer {
 
                 // Find parent symbol (e.g., impl block for methods)
                 if let Some(parent) = symbol_def.parent {
-                    candidates.push((
-                        parent,
-                        0.7,
-                        format!("Parent of {}", current_name),
-                    ));
+                    candidates.push((parent, 0.7, format!("Parent of {}", current_name)));
                 }
             }
         }
@@ -200,11 +189,7 @@ impl ContextSynthesizer {
                 // Limit imports
                 // Try to find symbols matching the imported names
                 if let Some(import_symbol) = self.find_symbol_by_name(state, &import.name) {
-                    candidates.push((
-                        import_symbol,
-                        0.4,
-                        format!("Imported: {}", import.name),
-                    ));
+                    candidates.push((import_symbol, 0.4, format!("Imported: {}", import.name)));
                 }
             }
         }
@@ -362,11 +347,7 @@ impl ContextSynthesizer {
         let without_refs = trimmed.trim_start_matches('&').trim_start_matches("mut ");
 
         // Take the part before '<' or whitespace
-        let main_type = without_refs
-            .split('<')
-            .next()?
-            .split_whitespace()
-            .next()?;
+        let main_type = without_refs.split('<').next()?.split_whitespace().next()?;
 
         if main_type.is_empty() || main_type.starts_with(char::is_lowercase) {
             // Likely a primitive type or keyword

@@ -5,10 +5,10 @@
 //! - Per-file churn metrics (commits, lines changed, authors)
 //! - Code stability patterns
 
+use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use anyhow::{Context, Result};
 
 /// A churn analyzer that uses git history to identify code hotspots.
 pub struct ChurnAnalyzer;
@@ -78,13 +78,7 @@ impl ChurnAnalyzer {
         let since = format!("{} days ago", days);
 
         let output = Command::new("git")
-            .args([
-                "log",
-                "--since",
-                &since,
-                "--pretty=format:",
-                "--name-only",
-            ])
+            .args(["log", "--since", &since, "--pretty=format:", "--name-only"])
             .current_dir(root)
             .output()
             .context("Failed to get changed files from git")?;
@@ -128,10 +122,7 @@ impl ChurnAnalyzer {
         }
 
         let log_stdout = String::from_utf8_lossy(&log_output.stdout);
-        let commits: Vec<&str> = log_stdout
-            .lines()
-            .filter(|line| !line.is_empty())
-            .collect();
+        let commits: Vec<&str> = log_stdout.lines().filter(|line| !line.is_empty()).collect();
 
         let commit_count = commits.len() as u32;
 
@@ -321,7 +312,9 @@ mod tests {
         // Should have churn data for test.rs
         assert!(!report.file_churn.is_empty());
 
-        let test_file_churn = report.file_churn.iter()
+        let test_file_churn = report
+            .file_churn
+            .iter()
             .find(|fc| fc.path == PathBuf::from("test.rs"));
 
         assert!(test_file_churn.is_some());
@@ -344,7 +337,12 @@ mod tests {
         let result = ChurnAnalyzer::analyze(temp_dir.path(), 30);
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Not a git repository"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Not a git repository")
+        );
     }
 
     #[test]
@@ -372,7 +370,9 @@ mod tests {
 
         // hotspot.rs should be in the hotspots list (>3 commits)
         assert!(!report.hotspots.is_empty());
-        let hotspot = report.hotspots.iter()
+        let hotspot = report
+            .hotspots
+            .iter()
             .find(|(path, _)| path == &PathBuf::from("hotspot.rs"));
 
         assert!(hotspot.is_some());

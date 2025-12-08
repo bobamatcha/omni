@@ -39,10 +39,7 @@ pub enum TopologyNode {
         is_inline: bool,
     },
     /// A source file
-    File {
-        path: PathBuf,
-        file_id: FileId,
-    },
+    File { path: PathBuf, file_id: FileId },
 }
 
 /// Edge types for the Module Topology Graph.
@@ -51,14 +48,9 @@ pub enum TopologyEdge {
     /// Parent contains child (crate -> module, module -> file)
     Contains,
     /// Import relationship from `use` statement
-    Imports {
-        use_path: String,
-        is_glob: bool,
-    },
+    Imports { use_path: String, is_glob: bool },
     /// Re-export via `pub use`
-    ReExports {
-        original_path: String,
-    },
+    ReExports { original_path: String },
 }
 
 /// Metrics for a topology node.

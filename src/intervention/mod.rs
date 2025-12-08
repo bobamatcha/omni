@@ -53,10 +53,7 @@ impl InterventionEngine {
     ///
     /// # Returns
     /// A list of similarity matches, sorted by score (highest first)
-    pub fn detect_duplication(
-        state: &OciState,
-        proposed_signature: &str,
-    ) -> Vec<SimilarityMatch> {
+    pub fn detect_duplication(state: &OciState, proposed_signature: &str) -> Vec<SimilarityMatch> {
         // Parse the proposed signature
         let parsed = match Self::parse_signature(proposed_signature) {
             Some(p) => p,
@@ -95,7 +92,11 @@ impl InterventionEngine {
         }
 
         // Sort by score (highest first)
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         matches
     }
@@ -186,7 +187,9 @@ impl InterventionEngine {
 
         // Sort by similarity score
         interventions.sort_by(|a, b| {
-            b.similarity_score.partial_cmp(&a.similarity_score).unwrap_or(std::cmp::Ordering::Equal)
+            b.similarity_score
+                .partial_cmp(&a.similarity_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         interventions
@@ -206,11 +209,7 @@ impl InterventionEngine {
     ///
     /// # Returns
     /// A list of interventions for naming conflicts
-    pub fn check_naming_conflicts(
-        state: &OciState,
-        name: &str,
-        file: &Path,
-    ) -> Vec<Intervention> {
+    pub fn check_naming_conflicts(state: &OciState, name: &str, file: &Path) -> Vec<Intervention> {
         let mut interventions = Vec::new();
 
         // Get FileId for the file
@@ -236,7 +235,8 @@ impl InterventionEngine {
                             existing_symbol: symbol.scoped_name,
                             existing_location: symbol.location.clone(),
                             similarity_score: 1.0,
-                            recommendation: "Choose a different name or reuse the existing symbol".to_string(),
+                            recommendation: "Choose a different name or reuse the existing symbol"
+                                .to_string(),
                         });
                         continue;
                     }
@@ -275,7 +275,9 @@ impl InterventionEngine {
                             existing_symbol: symbol.scoped_name,
                             existing_location: symbol.location.clone(),
                             similarity_score: 0.95,
-                            recommendation: "Choose a name that differs in more than just capitalization".to_string(),
+                            recommendation:
+                                "Choose a name that differs in more than just capitalization"
+                                    .to_string(),
                         });
                     }
                 }
@@ -316,7 +318,9 @@ impl InterventionEngine {
             severity_order(&a.severity)
                 .cmp(&severity_order(&b.severity))
                 .then_with(|| {
-                    b.similarity_score.partial_cmp(&a.similarity_score).unwrap_or(std::cmp::Ordering::Equal)
+                    b.similarity_score
+                        .partial_cmp(&a.similarity_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 })
         });
 
@@ -433,7 +437,8 @@ impl InterventionEngine {
                     }
                 }
             }
-            let param_type_similarity = matching_params as f32 / parsed.params.len().max(sig.params.len()) as f32;
+            let param_type_similarity =
+                matching_params as f32 / parsed.params.len().max(sig.params.len()) as f32;
             total_score += param_type_similarity * 0.25;
         }
 
@@ -449,7 +454,7 @@ impl InterventionEngine {
                 }
             }
             (None, None) => 1.0, // Both return ()
-            _ => 0.5, // One returns something, the other doesn't
+            _ => 0.5,            // One returns something, the other doesn't
         };
         total_score += return_similarity * 0.15;
 
@@ -470,15 +475,10 @@ impl InterventionEngine {
     /// Check if two types are compatible (e.g., String and &str).
     fn types_compatible(ty1: &str, ty2: &str) -> bool {
         // Handle common compatible types
-        let compatible_pairs = [
-            ("string", "str"),
-            ("vec", "slice"),
-            ("&str", "string"),
-        ];
+        let compatible_pairs = [("string", "str"), ("vec", "slice"), ("&str", "string")];
 
         for (t1, t2) in &compatible_pairs {
-            if (ty1.contains(t1) && ty2.contains(t2))
-                || (ty1.contains(t2) && ty2.contains(t1)) {
+            if (ty1.contains(t1) && ty2.contains(t2)) || (ty1.contains(t2) && ty2.contains(t1)) {
                 return true;
             }
         }

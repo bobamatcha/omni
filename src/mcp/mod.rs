@@ -2,8 +2,8 @@
 //!
 //! Exposes OCI functionality via Model Context Protocol.
 
-use crate::state::{create_state, SharedState};
 use crate::incremental::IncrementalIndexer;
+use crate::state::{SharedState, create_state};
 use crate::topology::TopologyBuilder;
 use anyhow::Result;
 use petgraph::visit::EdgeRef;
@@ -175,11 +175,15 @@ impl OciServer {
                             let stats = state.oci_state.stats();
                             Ok(CallToolResult::success(vec![Content::text(format!(
                                 "Index built successfully:\n- {} files\n- {} symbols\n- {} call edges\n- {} topology nodes",
-                                stats.file_count, stats.symbol_count, stats.call_edge_count, stats.topology_node_count
+                                stats.file_count,
+                                stats.symbol_count,
+                                stats.call_edge_count,
+                                stats.topology_node_count
                             ))]))
                         }
                         Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-                            "Index build failed: {}", e
+                            "Index build failed: {}",
+                            e
                         ))])),
                     }
                 } else {
@@ -213,17 +217,28 @@ impl OciServer {
                     stats.symbol_count,
                     stats.call_edge_count,
                     stats.topology_node_count,
-                    if stats.has_semantic_index { "ready" } else { "not built" },
-                    if stats.has_bm25_index { "ready" } else { "not built" }
+                    if stats.has_semantic_index {
+                        "ready"
+                    } else {
+                        "not built"
+                    },
+                    if stats.has_bm25_index {
+                        "ready"
+                    } else {
+                        "not built"
+                    }
                 ))]))
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown operation: {}. Valid: build, rebuild, status", req.op
+                "Unknown operation: {}. Valid: build, rebuild, status",
+                req.op
             ))])),
         }
     }
 
-    #[tool(description = "Find symbols by name. Returns definitions with locations and signatures.")]
+    #[tool(
+        description = "Find symbols by name. Returns definitions with locations and signatures."
+    )]
     async fn find_symbol(
         &self,
         Parameters(req): Parameters<SymbolRequest>,
@@ -240,33 +255,65 @@ impl OciServer {
                 if let Some(sym) = oci.get_symbol(key) {
                     let name = oci.resolve(sym.name);
                     let scoped = oci.resolve(sym.scoped_name);
-                    let sig = sym.signature.as_ref().map(|s| format!("{} -> {}", s.params.join(", "), s.return_type.as_deref().unwrap_or("()"))).unwrap_or_default();
+                    let sig = sym
+                        .signature
+                        .as_ref()
+                        .map(|s| {
+                            format!(
+                                "{} -> {}",
+                                s.params.join(", "),
+                                s.return_type.as_deref().unwrap_or("()")
+                            )
+                        })
+                        .unwrap_or_default();
 
                     return Ok(CallToolResult::success(vec![Content::text(format!(
                         "Found: {} ({})\n  Kind: {:?}\n  Location: {}:{}\n  Signature: {}\n  Visibility: {:?}",
-                        scoped, name, sym.kind, sym.location.file.display(), sym.location.start_line, sig, sym.visibility
+                        scoped,
+                        name,
+                        sym.kind,
+                        sym.location.file.display(),
+                        sym.location.start_line,
+                        sig,
+                        sym.visibility
                     ))]));
                 }
             }
             Ok(CallToolResult::success(vec![Content::text(format!(
-                "No symbol found with scoped name: {}", req.name
+                "No symbol found with scoped name: {}",
+                req.name
             ))]))
         } else {
             // Search by simple name
             let symbols = oci.find_by_name(&req.name);
             if symbols.is_empty() {
                 return Ok(CallToolResult::success(vec![Content::text(format!(
-                    "No symbols found with name: {}", req.name
+                    "No symbols found with name: {}",
+                    req.name
                 ))]));
             }
 
             let mut output = format!("Found {} symbols:\n\n", symbols.len().min(max));
             for sym in symbols.iter().take(max) {
                 let scoped = oci.resolve(sym.scoped_name);
-                let sig = sym.signature.as_ref().map(|s| format!("({}) -> {}", s.params.join(", "), s.return_type.as_deref().unwrap_or("()"))).unwrap_or_default();
+                let sig = sym
+                    .signature
+                    .as_ref()
+                    .map(|s| {
+                        format!(
+                            "({}) -> {}",
+                            s.params.join(", "),
+                            s.return_type.as_deref().unwrap_or("()")
+                        )
+                    })
+                    .unwrap_or_default();
                 output.push_str(&format!(
                     "- {} [{:?}]\n  {}:{}\n  {}\n\n",
-                    scoped, sym.kind, sym.location.file.display(), sym.location.start_line, sig
+                    scoped,
+                    sym.kind,
+                    sym.location.file.display(),
+                    sym.location.start_line,
+                    sig
                 ));
             }
 
@@ -287,16 +334,21 @@ impl OciServer {
                 let callers = oci.find_callers(&req.name);
                 if callers.is_empty() {
                     return Ok(CallToolResult::success(vec![Content::text(format!(
-                        "No callers found for: {}", req.name
+                        "No callers found for: {}",
+                        req.name
                     ))]));
                 }
 
-                let mut output = format!("Found {} call sites for '{}':\n\n", callers.len(), req.name);
+                let mut output =
+                    format!("Found {} call sites for '{}':\n\n", callers.len(), req.name);
                 for call in &callers {
                     let caller_name = oci.resolve(call.caller);
                     output.push_str(&format!(
                         "- {} calls {} at {}:{}\n",
-                        caller_name, call.callee_name, call.location.file.display(), call.location.start_line
+                        caller_name,
+                        call.callee_name,
+                        call.location.file.display(),
+                        call.location.start_line
                     ));
                 }
 
@@ -307,7 +359,8 @@ impl OciServer {
                 let symbols = oci.find_by_name(&req.name);
                 if symbols.is_empty() {
                     return Ok(CallToolResult::success(vec![Content::text(format!(
-                        "No symbol found: {}", req.name
+                        "No symbol found: {}",
+                        req.name
                     ))]));
                 }
 
@@ -319,9 +372,16 @@ impl OciServer {
                     if callees.is_empty() {
                         output.push_str(&format!("{} has no recorded calls.\n", scoped));
                     } else {
-                        output.push_str(&format!("{} calls {} functions:\n", scoped, callees.len()));
+                        output.push_str(&format!(
+                            "{} calls {} functions:\n",
+                            scoped,
+                            callees.len()
+                        ));
                         for call in &callees {
-                            output.push_str(&format!("  - {} at line {}\n", call.callee_name, call.location.start_line));
+                            output.push_str(&format!(
+                                "  - {} at line {}\n",
+                                call.callee_name, call.location.start_line
+                            ));
                         }
                     }
                     output.push('\n');
@@ -330,7 +390,8 @@ impl OciServer {
                 Ok(CallToolResult::success(vec![Content::text(output)]))
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown operation: {}. Valid: callers, callees", req.op
+                "Unknown operation: {}. Valid: callers, callees",
+                req.op
             ))])),
         }
     }
@@ -347,7 +408,7 @@ impl OciServer {
             "dead_code" => {
                 // TODO: Integrate with dead_code analysis module
                 Ok(CallToolResult::success(vec![Content::text(
-                    "Dead code analysis not yet implemented. Will analyze reachability from entry points."
+                    "Dead code analysis not yet implemented. Will analyze reachability from entry points.",
                 )]))
             }
             "coverage" => {
@@ -355,11 +416,11 @@ impl OciServer {
                     Some(_path) => {
                         // TODO: Integrate with coverage analysis module
                         Ok(CallToolResult::success(vec![Content::text(
-                            "Coverage analysis not yet implemented. Will parse LLVM/tarpaulin JSON."
+                            "Coverage analysis not yet implemented. Will parse LLVM/tarpaulin JSON.",
                         )]))
                     }
                     None => Ok(CallToolResult::error(vec![Content::text(
-                        "coverage_file parameter required for coverage analysis"
+                        "coverage_file parameter required for coverage analysis",
                     )])),
                 }
             }
@@ -367,17 +428,18 @@ impl OciServer {
                 let _days = req.days.unwrap_or(30);
                 // TODO: Integrate with churn analysis module
                 Ok(CallToolResult::success(vec![Content::text(
-                    "Churn analysis not yet implemented. Will analyze git history."
+                    "Churn analysis not yet implemented. Will analyze git history.",
                 )]))
             }
             "hotspots" => {
                 // TODO: Combine churn + complexity metrics
                 Ok(CallToolResult::success(vec![Content::text(
-                    "Hotspot analysis not yet implemented. Will combine churn frequency with complexity."
+                    "Hotspot analysis not yet implemented. Will combine churn frequency with complexity.",
                 )]))
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown analysis: {}. Valid: dead_code, coverage, churn, hotspots", req.analysis
+                "Unknown analysis: {}. Valid: dead_code, coverage, churn, hotspots",
+                req.analysis
             ))])),
         }
     }
@@ -395,28 +457,31 @@ impl OciServer {
             "semantic" => {
                 // TODO: Integrate with semantic search
                 Ok(CallToolResult::success(vec![Content::text(
-                    "Semantic search not yet implemented. Will use embeddings + HNSW."
+                    "Semantic search not yet implemented. Will use embeddings + HNSW.",
                 )]))
             }
             "bm25" => {
                 // TODO: Integrate with BM25 search
                 Ok(CallToolResult::success(vec![Content::text(
-                    "BM25 search not yet implemented. Will use inverted index."
+                    "BM25 search not yet implemented. Will use inverted index.",
                 )]))
             }
             "hybrid" => {
                 // TODO: Combine semantic + BM25
                 Ok(CallToolResult::success(vec![Content::text(
-                    "Hybrid search not yet implemented. Will combine semantic + BM25 with RRF."
+                    "Hybrid search not yet implemented. Will combine semantic + BM25 with RRF.",
                 )]))
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown search type: {}. Valid: semantic, bm25, hybrid", req.search_type
+                "Unknown search type: {}. Valid: semantic, bm25, hybrid",
+                req.search_type
             ))])),
         }
     }
 
-    #[tool(description = "Get smart context for a location. Includes callers, callees, related types.")]
+    #[tool(
+        description = "Get smart context for a location. Includes callers, callees, related types."
+    )]
     async fn get_context(
         &self,
         Parameters(req): Parameters<ContextRequest>,
@@ -435,7 +500,9 @@ impl OciServer {
         ))]))
     }
 
-    #[tool(description = "Check for potential issues before writing code: duplication, naming conflicts")]
+    #[tool(
+        description = "Check for potential issues before writing code: duplication, naming conflicts"
+    )]
     async fn intervene(
         &self,
         Parameters(req): Parameters<InterventionRequest>,
@@ -449,11 +516,11 @@ impl OciServer {
                     Some(_sig) => {
                         // TODO: Integrate with intervention engine
                         Ok(CallToolResult::success(vec![Content::text(
-                            "Duplication check not yet implemented. Will find similar signatures."
+                            "Duplication check not yet implemented. Will find similar signatures.",
                         )]))
                     }
                     None => Ok(CallToolResult::error(vec![Content::text(
-                        "signature parameter required for duplication check"
+                        "signature parameter required for duplication check",
                     )])),
                 }
             }
@@ -462,11 +529,11 @@ impl OciServer {
                     Some(_name) => {
                         // TODO: Integrate with intervention engine
                         Ok(CallToolResult::success(vec![Content::text(
-                            "Naming conflict check not yet implemented. Will check for conflicts."
+                            "Naming conflict check not yet implemented. Will check for conflicts.",
                         )]))
                     }
                     None => Ok(CallToolResult::error(vec![Content::text(
-                        "name parameter required for naming check"
+                        "name parameter required for naming check",
                     )])),
                 }
             }
@@ -475,16 +542,17 @@ impl OciServer {
                     Some(_name) => {
                         // TODO: Integrate with intervention engine
                         Ok(CallToolResult::success(vec![Content::text(
-                            "Alternatives suggestion not yet implemented. Will find reusable code."
+                            "Alternatives suggestion not yet implemented. Will find reusable code.",
                         )]))
                     }
                     None => Ok(CallToolResult::error(vec![Content::text(
-                        "name parameter required for alternatives check"
+                        "name parameter required for alternatives check",
                     )])),
                 }
             }
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown check: {}. Valid: duplication, naming, alternatives", req.check
+                "Unknown check: {}. Valid: duplication, naming, alternatives",
+                req.check
             ))])),
         }
     }
@@ -511,11 +579,13 @@ impl OciServer {
 
                 if modules.is_empty() {
                     Ok(CallToolResult::success(vec![Content::text(
-                        "No modules found. Run index build first."
+                        "No modules found. Run index build first.",
                     )]))
                 } else {
                     Ok(CallToolResult::success(vec![Content::text(format!(
-                        "Found {} modules:\n{}", modules.len(), modules.join("\n")
+                        "Found {} modules:\n{}",
+                        modules.len(),
+                        modules.join("\n")
                     ))]))
                 }
             }
@@ -524,7 +594,9 @@ impl OciServer {
                 let mut count = 0;
 
                 for entry in oci.imports.iter() {
-                    if count >= max { break; }
+                    if count >= max {
+                        break;
+                    }
                     let file_id = *entry.key();
                     let imports = entry.value();
 
@@ -532,7 +604,11 @@ impl OciServer {
                     if let Some(path_entry) = oci.file_ids.iter().find(|e| *e.value() == file_id) {
                         output.push_str(&format!("{}:\n", path_entry.key().display()));
                         for imp in imports.iter().take(5) {
-                            output.push_str(&format!("  - {}{}\n", imp.path, if imp.is_glob { "::*" } else { "" }));
+                            output.push_str(&format!(
+                                "  - {}{}\n",
+                                imp.path,
+                                if imp.is_glob { "::*" } else { "" }
+                            ));
                         }
                         if imports.len() > 5 {
                             output.push_str(&format!("  ... and {} more\n", imports.len() - 5));
@@ -545,7 +621,9 @@ impl OciServer {
                 Ok(CallToolResult::success(vec![Content::text(output)]))
             }
             "pagerank" => {
-                let mut scores: Vec<_> = oci.topology_metrics.iter()
+                let mut scores: Vec<_> = oci
+                    .topology_metrics
+                    .iter()
                     .map(|e| (*e.key(), e.value().relevance_score))
                     .collect();
                 scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -556,9 +634,16 @@ impl OciServer {
                 for (idx, score) in scores.iter().take(max) {
                     if let Some(node) = graph.node_weight(*idx) {
                         let name = match node {
-                            crate::types::TopologyNode::Crate { name, .. } => format!("crate:{}", name),
-                            crate::types::TopologyNode::Module { name, .. } => format!("mod:{}", name),
-                            crate::types::TopologyNode::File { path, .. } => path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                            crate::types::TopologyNode::Crate { name, .. } => {
+                                format!("crate:{}", name)
+                            }
+                            crate::types::TopologyNode::Module { name, .. } => {
+                                format!("mod:{}", name)
+                            }
+                            crate::types::TopologyNode::File { path, .. } => path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default(),
                         };
                         output.push_str(&format!("{:.4}  {}\n", score, name));
                     }
@@ -566,41 +651,45 @@ impl OciServer {
 
                 Ok(CallToolResult::success(vec![Content::text(output)]))
             }
-            "dependencies" => {
-                match &req.path {
-                    Some(path) => {
-                        let path = PathBuf::from(path);
-                        if let Some(node_idx) = oci.path_to_node.get(&path) {
-                            let graph = oci.topology.read();
-                            let mut deps = Vec::new();
+            "dependencies" => match &req.path {
+                Some(path) => {
+                    let path = PathBuf::from(path);
+                    if let Some(node_idx) = oci.path_to_node.get(&path) {
+                        let graph = oci.topology.read();
+                        let mut deps = Vec::new();
 
-                            for edge in graph.edges(*node_idx) {
-                                if let Some(target) = graph.node_weight(edge.target()) {
-                                    let name = match target {
-                                        crate::types::TopologyNode::File { path, .. } => path.display().to_string(),
-                                        crate::types::TopologyNode::Module { name, .. } => name.clone(),
-                                        crate::types::TopologyNode::Crate { name, .. } => name.clone(),
-                                    };
-                                    deps.push(format!("  -> {}", name));
-                                }
+                        for edge in graph.edges(*node_idx) {
+                            if let Some(target) = graph.node_weight(edge.target()) {
+                                let name = match target {
+                                    crate::types::TopologyNode::File { path, .. } => {
+                                        path.display().to_string()
+                                    }
+                                    crate::types::TopologyNode::Module { name, .. } => name.clone(),
+                                    crate::types::TopologyNode::Crate { name, .. } => name.clone(),
+                                };
+                                deps.push(format!("  -> {}", name));
                             }
-
-                            Ok(CallToolResult::success(vec![Content::text(format!(
-                                "Dependencies of {}:\n{}", path.display(), deps.join("\n")
-                            ))]))
-                        } else {
-                            Ok(CallToolResult::error(vec![Content::text(format!(
-                                "Path not found in topology: {}", path.display()
-                            ))]))
                         }
+
+                        Ok(CallToolResult::success(vec![Content::text(format!(
+                            "Dependencies of {}:\n{}",
+                            path.display(),
+                            deps.join("\n")
+                        ))]))
+                    } else {
+                        Ok(CallToolResult::error(vec![Content::text(format!(
+                            "Path not found in topology: {}",
+                            path.display()
+                        ))]))
                     }
-                    None => Ok(CallToolResult::error(vec![Content::text(
-                        "path parameter required for dependencies query"
-                    )])),
                 }
-            }
+                None => Ok(CallToolResult::error(vec![Content::text(
+                    "path parameter required for dependencies query",
+                )])),
+            },
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown operation: {}. Valid: modules, imports, pagerank, dependencies", req.op
+                "Unknown operation: {}. Valid: modules, imports, pagerank, dependencies",
+                req.op
             ))])),
         }
     }

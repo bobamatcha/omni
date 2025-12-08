@@ -70,11 +70,7 @@ impl DeadCodeAnalyzer {
     }
 
     /// Determines if a symbol is an entry point.
-    fn is_entry_point(
-        &self,
-        state: &OciState,
-        symbol: &crate::types::SymbolDef,
-    ) -> bool {
+    fn is_entry_point(&self, state: &OciState, symbol: &crate::types::SymbolDef) -> bool {
         // 1. Functions named "main" are always entry points
         let name = state.resolve(symbol.name);
         if name == "main" && matches!(symbol.kind, SymbolKind::Function) {

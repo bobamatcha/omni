@@ -4,10 +4,10 @@
 //! - Test coverage integration
 //! - Churn analysis
 
-pub mod dead_code;
-pub mod coverage;
 pub mod churn;
+pub mod coverage;
+pub mod dead_code;
 
 // Re-exports
+pub use coverage::{BranchCoverage, CoverageAnalyzer, CoverageData, LineCoverage};
 pub use dead_code::DeadCodeAnalyzer;
-pub use coverage::{CoverageAnalyzer, CoverageData, LineCoverage, BranchCoverage};
