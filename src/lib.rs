@@ -48,6 +48,7 @@
 //! ```
 
 pub mod discovery;
+pub mod fold;
 pub mod incremental;
 pub mod parsing;
 pub mod state;
@@ -66,6 +67,7 @@ pub mod semantic;
 pub use analysis::DeadCodeAnalyzer;
 pub use context::{ContextChunk, ContextQuery, ContextResult, ContextSynthesizer};
 pub use discovery::FileDiscovery;
+pub use fold::{FunctionSignature, fold_to_signatures, parse_single_file};
 pub use incremental::IncrementalIndexer;
 pub use intervention::InterventionEngine;
 pub use search::{
