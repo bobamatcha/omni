@@ -192,12 +192,15 @@ jobs:
 
       - name: Test MCP server starts
         run: |
-          timeout 5 ./target/release/omni-server 2>&1 || exit_code=$?
-          # Exit code 124 means timeout (expected since no stdin), anything else is a real error
-          if [ "$exit_code" != "124" ] && [ "$exit_code" != "" ]; then
-            echo "Server failed to start with exit code $exit_code"
+          # Send a proper MCP initialize request and verify we get a response
+          response=$(echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | \
+            timeout 10 ./target/release/omni-server 2>&1 || true)
+          echo "$response"
+          if echo "$response" | grep -q '"result"'; then
+            echo "SUCCESS: MCP server responded to initialize request"
+          else
+            echo "FAILED: MCP server did not respond correctly"
             exit 1
           fi
-          echo "MCP server started successfully"
         env:
           OCI_WORKSPACE: /tmp/test_workspace
