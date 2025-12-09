@@ -1,0 +1,85 @@
+[package]
+name = "omni-index"
+version = "0.1.0"
+edition = "2024"
+description = "Omniscient Code Index - Semantic, interventionist code indexer for AI agents"
+
+[[bin]]
+name = "omni-server"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Parsing
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+
+# Graph
+petgraph = "0.7"
+
+# MCP Protocol
+rmcp = { version = "0.3", features = ["server", "transport-io"] }
+
+# File watching
+notify = "7"
+notify-debouncer-mini = "0.5"
+
+# File system
+walkdir = "2"
+ignore = "0.4"
+globset = "0.4"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1.0"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Concurrency
+dashmap = "6"
+parking_lot = "0.12"
+
+# String interning
+lasso = { version = "0.7", features = ["multi-threaded"] }
+
+# Search
+regex = "1"
+
+# Semantic embeddings
+fastembed = "4"
+instant-distance = "0.6"
+
+# Utilities
+bytecount = "0.6"
+strsim = "0.11"
+
+[dev-dependencies]
+tempfile = "3"
+tokio-test = "0.4"
+pretty_assertions = "1"
+criterion = { version = "0.5", features = ["async_tokio"] }
+proptest = "1.4"
+proptest-derive = "0.5"
+walkdir = "2"
+
+[[bench]]
+name = "indexing"
+harness = false
+
+[[bench]]
+name = "comparative"
+harness = false
+
+[[bench]]
+name = "search_quality"
+harness = false
