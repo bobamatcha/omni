@@ -1,3 +1,14 @@
+// Allow some clippy lints that are too strict for our codebase
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::manual_map)]
+#![allow(clippy::manual_strip)]
+#![allow(clippy::or_fun_call)]
+#![allow(clippy::only_used_in_recursion)]
+#![allow(clippy::double_ended_iterator_last)]
+#![allow(clippy::cmp_owned)]
+#![allow(clippy::unwrap_or_default)]
+
 //! Omniscient Code Index (OCI)
 //!
 //! A semantic, interventionist code indexer for AI coding agents.

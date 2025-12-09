@@ -8,13 +8,12 @@
 //! 3. Run code-index benchmarks on the same repo
 //! 4. Compare results
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use omni_index::{
-    create_state, parsing::rust::RustParser, parsing::LanguageParser, topology::TopologyBuilder,
-    DeadCodeAnalyzer, FileDiscovery, IncrementalIndexer, InterventionEngine, OciState,
+    DeadCodeAnalyzer, IncrementalIndexer, InterventionEngine, create_state,
+    topology::TopologyBuilder,
 };
 use std::fs;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 // ============================================================================
@@ -50,12 +49,18 @@ fn generate_module_content(module_idx: usize, total_modules: usize) -> String {
     let mut code = String::with_capacity(4000);
 
     // Module doc
-    code.push_str(&format!("//! Module {} for benchmark testing.\n\n", module_idx));
+    code.push_str(&format!(
+        "//! Module {} for benchmark testing.\n\n",
+        module_idx
+    ));
 
     // Imports (some cross-module)
     code.push_str("use std::collections::HashMap;\n");
     if module_idx > 0 {
-        code.push_str(&format!("use crate::module_{}::helper_fn;\n", module_idx - 1));
+        code.push_str(&format!(
+            "use crate::module_{}::helper_fn;\n",
+            module_idx - 1
+        ));
     }
     code.push('\n');
 
@@ -182,7 +187,11 @@ fn bench_build_index(c: &mut Criterion) {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().map(|ext| ext == "rs").unwrap_or(false))
-            .map(|e| fs::metadata(e.path()).map(|m| m.len() as usize).unwrap_or(0))
+            .map(|e| {
+                fs::metadata(e.path())
+                    .map(|m| m.len() as usize)
+                    .unwrap_or(0)
+            })
             .sum();
 
         group.throughput(Throughput::Bytes(total_bytes as u64));
@@ -385,7 +394,8 @@ fn bench_oci_unique_features(c: &mut Criterion) {
     let test_file = temp.path().join("src/module_0.rs");
     group.bench_function("check_naming_conflicts", |b| {
         b.iter(|| {
-            let results = InterventionEngine::check_naming_conflicts(&state, "helper_fn", &test_file);
+            let results =
+                InterventionEngine::check_naming_conflicts(&state, "helper_fn", &test_file);
             black_box(results.len())
         });
     });
@@ -484,4 +494,9 @@ criterion_group!(
     targets = bench_incremental
 );
 
-criterion_main!(build_benches, query_benches, unique_benches, incremental_benches);
+criterion_main!(
+    build_benches,
+    query_benches,
+    unique_benches,
+    incremental_benches
+);

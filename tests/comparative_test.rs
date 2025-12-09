@@ -8,13 +8,9 @@
 //! For benchmarks comparing both: cargo bench --bench comparative
 
 use omni_index::{
-    create_state, parsing::rust::RustParser, parsing::LanguageParser, topology::TopologyBuilder,
-    CallEdge, DeadCodeAnalyzer, FileDiscovery, IncrementalIndexer, InterventionEngine, Location,
-    OciState, SymbolKind,
+    DeadCodeAnalyzer, IncrementalIndexer, InterventionEngine, SymbolKind, create_state,
 };
-use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tempfile::TempDir;
 
@@ -436,7 +432,10 @@ fn test_symbol_extraction_completeness() {
     assert!(!process_defs.is_empty(), "Should find process method");
 
     let validate_defs = state.find_by_name("validate_input");
-    assert!(!validate_defs.is_empty(), "Should find validate_input function");
+    assert!(
+        !validate_defs.is_empty(),
+        "Should find validate_input function"
+    );
 
     // Should find test functions
     let test_fns: Vec<_> = state
@@ -476,10 +475,7 @@ fn test_call_graph_accuracy() {
     println!("Callers of format_output: {:?}", format_callers.len());
 
     // Check call edges exist
-    assert!(
-        state.stats().call_edge_count > 0,
-        "Should have call edges"
-    );
+    assert!(state.stats().call_edge_count > 0, "Should have call edges");
 }
 
 /// Test: Scoped name resolution
@@ -513,7 +509,9 @@ fn test_scoped_name_resolution() {
     }
 
     // Should have scoped names like Engine::new, Engine::process
-    let has_impl_methods = scoped_names.iter().any(|n| n.contains("::new") || n.contains("::process"));
+    let has_impl_methods = scoped_names
+        .iter()
+        .any(|n| n.contains("::new") || n.contains("::process"));
     assert!(has_impl_methods, "Should have scoped impl methods");
 }
 
@@ -540,7 +538,7 @@ fn test_dead_code_detection() {
     println!("  Potentially live: {}", report.potentially_live.len());
 
     // Public items should be entry points
-    assert!(report.entry_points.len() > 0, "Should have entry points");
+    assert!(!report.entry_points.is_empty(), "Should have entry points");
 }
 
 /// Test: Intervention engine (duplicate detection)
@@ -599,7 +597,9 @@ fn test_topology_scoring() {
             .topology_metrics
             .iter()
             .filter_map(|e| {
-                node_to_path.get(e.key()).map(|path| (path.clone(), e.value().relevance_score))
+                node_to_path
+                    .get(e.key())
+                    .map(|path| (path.clone(), e.value().relevance_score))
             })
             .collect();
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
@@ -637,7 +637,10 @@ fn test_indexing_performance() {
     println!("  Time: {:?}", elapsed);
     println!("  Files: {}", stats.file_count);
     println!("  Symbols: {}", stats.symbol_count);
-    println!("  Symbols/ms: {:.2}", stats.symbol_count as f64 / elapsed.as_millis() as f64);
+    println!(
+        "  Symbols/ms: {:.2}",
+        stats.symbol_count as f64 / elapsed.as_millis() as f64
+    );
 
     // Should be reasonably fast (< 1s for small codebase)
     assert!(elapsed.as_secs() < 5, "Indexing should complete in < 5s");
@@ -671,12 +674,23 @@ fn test_query_performance() {
     let callers_time = start.elapsed();
 
     println!("Query performance (1000 iterations):");
-    println!("  find_by_name: {:?} ({:.2} µs/query)", find_time, find_time.as_micros() as f64 / 1000.0);
-    println!("  find_callers: {:?} ({:.2} µs/query)", callers_time, callers_time.as_micros() as f64 / 1000.0);
+    println!(
+        "  find_by_name: {:?} ({:.2} µs/query)",
+        find_time,
+        find_time.as_micros() as f64 / 1000.0
+    );
+    println!(
+        "  find_callers: {:?} ({:.2} µs/query)",
+        callers_time,
+        callers_time.as_micros() as f64 / 1000.0
+    );
 
     // Queries should be fast (< 1ms each on average)
     assert!(find_time.as_millis() < 100, "find_by_name should be fast");
-    assert!(callers_time.as_millis() < 100, "find_callers should be fast");
+    assert!(
+        callers_time.as_millis() < 100,
+        "find_callers should be fast"
+    );
 }
 
 /// Test: Incremental update performance
@@ -703,7 +717,10 @@ fn test_incremental_update_performance() {
     println!("  Single file update: {:?}", update_time);
 
     // Update should be fast (< 100ms)
-    assert!(update_time.as_millis() < 500, "Incremental update should be fast");
+    assert!(
+        update_time.as_millis() < 500,
+        "Incremental update should be fast"
+    );
 }
 
 // ============================================================================
@@ -730,7 +747,7 @@ fn test_api_equivalence() {
 
     // code-index API: find_calls(callee) -> [CallEdge]
     // OCI equivalent: find_callers(callee) -> [CallEdge]
-    let callers = state.find_callers("validate_input");
+    let _callers = state.find_callers("validate_input");
     // Note: may be empty if no callers in index, which is fine
 
     // code-index API: functions_of_file(path) -> [String]

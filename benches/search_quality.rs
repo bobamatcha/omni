@@ -5,10 +5,10 @@
 //! 2. BM25 protects against junk semantic matches
 //! 3. Hybrid combining both performs best
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use omni_index::search::{
-    extract_doc_comments, extract_identifiers, extract_string_literals, path_tokens, Bm25Index,
-    Bm25Params, FieldWeights, FoundBy, HybridSearch,
+    Bm25Index, Bm25Params, FieldWeights, FoundBy, HybridSearch, extract_doc_comments,
+    extract_identifiers, extract_string_literals, path_tokens,
 };
 use omni_index::types::InternedString;
 use std::collections::HashMap;
@@ -27,8 +27,6 @@ struct SearchTestCase {
 enum SearchWeakness {
     /// BM25 fails on synonyms (semantic should win).
     Synonyms,
-    /// Semantic returns irrelevant results (BM25 should filter).
-    SemanticJunk,
     /// Both methods work well (hybrid reinforces).
     BothGood,
     /// Partial match query (tests tokenization).
@@ -335,7 +333,9 @@ fn simulate_semantic_search(
             return results
                 .iter()
                 .filter_map(|(name, score)| {
-                    interner.get(*name).map(|spur| (InternedString::from(spur), *score))
+                    interner
+                        .get(*name)
+                        .map(|spur| (InternedString::from(spur), *score))
                 })
                 .take(top_k)
                 .collect();
@@ -406,10 +406,10 @@ fn evaluate_search_quality(c: &mut Criterion) {
         println!("  Expected: {:?}", test_case.relevant);
 
         // Get relevant symbol IDs
-        let relevant_symbols: Vec<_> = test_case
+        let relevant_symbols: Vec<InternedString> = test_case
             .relevant
             .iter()
-            .filter_map(|name| interner.get(*name).map(InternedString::from))
+            .filter_map(|name| interner.get(*name))
             .collect();
 
         // BM25 only
@@ -426,11 +426,9 @@ fn evaluate_search_quality(c: &mut Criterion) {
         let semantic_found: Vec<_> = semantic_results.iter().map(|(s, _)| *s).collect();
 
         // Hybrid
-        let bm25_for_hybrid: Vec<_> = bm25_results
-            .iter()
-            .map(|r| (r.symbol, r.score))
-            .collect();
-        let hybrid_results = hybrid.search(test_case.query, semantic_results.clone(), bm25_for_hybrid);
+        let bm25_for_hybrid: Vec<_> = bm25_results.iter().map(|r| (r.symbol, r.score)).collect();
+        let hybrid_results =
+            hybrid.search(test_case.query, semantic_results.clone(), bm25_for_hybrid);
 
         // Calculate metrics
         let bm25_mrr = calculate_mrr(&bm25_found, &relevant_symbols);
@@ -454,7 +452,10 @@ fn evaluate_search_quality(c: &mut Criterion) {
             .count();
 
         println!("  Results:");
-        println!("    BM25:     MRR={:.3} Recall={:.3}", bm25_mrr, bm25_recall);
+        println!(
+            "    BM25:     MRR={:.3} Recall={:.3}",
+            bm25_mrr, bm25_recall
+        );
         println!(
             "    Semantic: MRR={:.3} Recall={:.3}",
             semantic_mrr, semantic_recall
@@ -483,7 +484,7 @@ fn evaluate_search_quality(c: &mut Criterion) {
 
         // Benchmark latency
         group.bench_with_input(
-            BenchmarkId::new("bm25", &test_case.name),
+            BenchmarkId::new("bm25", test_case.name),
             &test_case.query,
             |b, query| {
                 b.iter(|| {
@@ -498,7 +499,7 @@ fn evaluate_search_quality(c: &mut Criterion) {
         );
 
         group.bench_with_input(
-            BenchmarkId::new("hybrid", &test_case.name),
+            BenchmarkId::new("hybrid", test_case.name),
             &test_case.query,
             |b, query| {
                 b.iter(|| {

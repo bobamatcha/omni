@@ -185,12 +185,12 @@ impl Bm25Index {
         // Compute average lengths per field
         let mut sum = [0u64; 5];
         for doc in &self.docs {
-            for i in 0..5 {
-                sum[i] += doc.len_by_field[i] as u64;
+            for (s, &len) in sum.iter_mut().zip(doc.len_by_field.iter()) {
+                *s += len as u64;
             }
         }
-        for i in 0..5 {
-            self.avg_len_by_field[i] = sum[i] as f32 / n_docs;
+        for (avg, &s) in self.avg_len_by_field.iter_mut().zip(sum.iter()) {
+            *avg = s as f32 / n_docs;
         }
 
         // Compute document frequencies
@@ -234,18 +234,18 @@ impl Bm25Index {
 
                 // Compute weighted term frequency
                 let mut tf_weighted = 0.0f32;
-                for i in 0..5 {
+                for (i, &weight) in field_weights.iter().enumerate() {
                     if posting.tf_by_field[i] > 0 {
-                        tf_weighted += field_weights[i] * posting.tf_by_field[i] as f32;
+                        tf_weighted += weight * posting.tf_by_field[i] as f32;
                     }
                 }
 
                 // Compute blended document length
                 let mut len = 0.0f32;
                 let mut avg_len = 0.0f32;
-                for i in 0..5 {
-                    len += field_weights[i] * doc.len_by_field[i] as f32;
-                    avg_len += field_weights[i] * self.avg_len_by_field[i];
+                for (i, &weight) in field_weights.iter().enumerate() {
+                    len += weight * doc.len_by_field[i] as f32;
+                    avg_len += weight * self.avg_len_by_field[i];
                 }
 
                 // BM25 scoring
@@ -267,7 +267,11 @@ impl Bm25Index {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(top_k);
         results
     }
@@ -314,8 +318,7 @@ fn split_identifier(s: &str) -> Vec<&str> {
         let curr = bytes[i] as char;
 
         // Split on: underscore, lowercase->uppercase transition
-        let boundary = curr == '_'
-            || (prev.is_ascii_lowercase() && curr.is_ascii_uppercase());
+        let boundary = curr == '_' || (prev.is_ascii_lowercase() && curr.is_ascii_uppercase());
 
         if boundary {
             if start < i && bytes[start] != b'_' {
@@ -447,10 +450,13 @@ mod tests {
 
     #[test]
     fn test_bm25_basic() {
+        use lasso::ThreadedRodeo;
+
         let mut index = Bm25Index::new();
 
-        let sym1 = InternedString::from(lasso::Spur::try_from_usize(1).unwrap());
-        let sym2 = InternedString::from(lasso::Spur::try_from_usize(2).unwrap());
+        let interner = ThreadedRodeo::default();
+        let sym1 = InternedString::from(interner.get_or_intern("add_numbers"));
+        let sym2 = InternedString::from(interner.get_or_intern("subtract_numbers"));
 
         index.add_document(
             sym1,
@@ -472,7 +478,12 @@ mod tests {
 
         index.finalize();
 
-        let results = index.search("add integers", &FieldWeights::default(), Bm25Params::default(), 10);
+        let results = index.search(
+            "add integers",
+            &FieldWeights::default(),
+            Bm25Params::default(),
+            10,
+        );
         assert!(!results.is_empty());
         assert_eq!(results[0].symbol, sym1);
     }

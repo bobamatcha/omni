@@ -8,8 +8,8 @@
 mod bm25;
 
 pub use bm25::{
-    extract_doc_comments, extract_identifiers, extract_string_literals, path_tokens, Bm25Index,
-    Bm25Params, Bm25SearchResult, FieldWeights,
+    Bm25Index, Bm25Params, Bm25SearchResult, FieldWeights, extract_doc_comments,
+    extract_identifiers, extract_string_literals, path_tokens,
 };
 
 use crate::types::InternedString;
@@ -124,7 +124,10 @@ impl HybridSearch {
         // Add semantic results with RRF scoring
         for (rank, (symbol, sim_score)) in semantic_results.iter().enumerate() {
             let rrf_score = self.config.semantic_weight / (k + rank as f32 + 1.0);
-            scores.insert(*symbol, (rrf_score, Some(*sim_score), None, FoundBy::SemanticOnly));
+            scores.insert(
+                *symbol,
+                (rrf_score, Some(*sim_score), None, FoundBy::SemanticOnly),
+            );
         }
 
         // Add/merge BM25 results with RRF scoring
@@ -144,16 +147,22 @@ impl HybridSearch {
         // Convert to results and sort by combined score
         let mut results: Vec<HybridSearchResult> = scores
             .into_iter()
-            .map(|(symbol, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
-                symbol,
-                score,
-                semantic_score,
-                bm25_score,
-                found_by,
-            })
+            .map(
+                |(symbol, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
+                    symbol,
+                    score,
+                    semantic_score,
+                    bm25_score,
+                    found_by,
+                },
+            )
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(self.config.final_top_k);
         results
     }
@@ -173,7 +182,10 @@ impl HybridSearch {
         // Normalize semantic scores (already 0-1 for cosine similarity)
         for (symbol, sim_score) in semantic_results {
             let weighted = self.config.semantic_weight * sim_score;
-            scores.insert(symbol, (weighted, Some(sim_score), None, FoundBy::SemanticOnly));
+            scores.insert(
+                symbol,
+                (weighted, Some(sim_score), None, FoundBy::SemanticOnly),
+            );
         }
 
         // Normalize and add BM25 scores
@@ -203,16 +215,22 @@ impl HybridSearch {
         // Convert to results and sort
         let mut results: Vec<HybridSearchResult> = scores
             .into_iter()
-            .map(|(symbol, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
-                symbol,
-                score,
-                semantic_score,
-                bm25_score,
-                found_by,
-            })
+            .map(
+                |(symbol, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
+                    symbol,
+                    score,
+                    semantic_score,
+                    bm25_score,
+                    found_by,
+                },
+            )
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(self.config.final_top_k);
         results
     }
@@ -291,7 +309,11 @@ impl SearchQualityMetrics {
             .map(|i| 1.0 / ((i + 2) as f32).log2())
             .sum();
 
-        let ndcg = if ideal_dcg > 0.0 { dcg / ideal_dcg } else { 0.0 };
+        let ndcg = if ideal_dcg > 0.0 {
+            dcg / ideal_dcg
+        } else {
+            0.0
+        };
 
         // Count by retrieval method
         let both_count = results
@@ -322,16 +344,18 @@ impl SearchQualityMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lasso::ThreadedRodeo;
 
     #[test]
     fn test_rrf_basic() {
         let config = HybridSearchConfig::default();
         let search = HybridSearch::new(config);
 
-        // Create some test symbols (using raw u32 values as InternedString for testing)
-        let sym_a = InternedString::from(lasso::Spur::try_from_usize(1).unwrap());
-        let sym_b = InternedString::from(lasso::Spur::try_from_usize(2).unwrap());
-        let sym_c = InternedString::from(lasso::Spur::try_from_usize(3).unwrap());
+        // Create an interner and some test symbols
+        let interner = ThreadedRodeo::default();
+        let sym_a = InternedString::from(interner.get_or_intern("symbol_a"));
+        let sym_b = InternedString::from(interner.get_or_intern("symbol_b"));
+        let sym_c = InternedString::from(interner.get_or_intern("symbol_c"));
 
         // Semantic: A > B > C
         let semantic = vec![(sym_a, 0.9), (sym_b, 0.7), (sym_c, 0.5)];
@@ -361,7 +385,8 @@ mod tests {
         };
         let search = HybridSearch::new(config);
 
-        let sym_a = InternedString::from(lasso::Spur::try_from_usize(1).unwrap());
+        let interner = ThreadedRodeo::default();
+        let sym_a = InternedString::from(interner.get_or_intern("symbol_a"));
 
         let semantic = vec![(sym_a, 0.8)];
         let bm25 = vec![(sym_a, 10.0)];
