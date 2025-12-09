@@ -335,8 +335,9 @@ impl TopologyBuilder {
             }
         }
 
-        // Create import edges
-        let mut graph = state.topology.write();
+        // Resolve all import targets BEFORE taking the write lock
+        // to avoid deadlock (resolve_import_target needs read access)
+        let mut edges_to_add: Vec<(NodeIndex, NodeIndex, TopologyEdge)> = Vec::new();
 
         for (source_node, _file_id, import) in import_map {
             // Try to resolve the import target
@@ -347,16 +348,21 @@ impl TopologyBuilder {
             let target_node = self.resolve_import_target(state, &import.path);
 
             if let Some(target) = target_node {
-                // Add import edge
-                graph.add_edge(
+                edges_to_add.push((
                     source_node,
                     target,
                     TopologyEdge::Imports {
                         use_path: import.path.clone(),
                         is_glob: import.is_glob,
                     },
-                );
+                ));
             }
+        }
+
+        // Now take the write lock and add all edges
+        let mut graph = state.topology.write();
+        for (source, target, edge) in edges_to_add {
+            graph.add_edge(source, target, edge);
         }
 
         Ok(())

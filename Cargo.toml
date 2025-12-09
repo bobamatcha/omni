@@ -75,3 +75,7 @@ walkdir = "2"
 [[bench]]
 name = "indexing"
 harness = false
+
+[[bench]]
+name = "comparative"
+harness = false
