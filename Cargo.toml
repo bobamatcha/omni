@@ -79,3 +79,7 @@ harness = false
 [[bench]]
 name = "comparative"
 harness = false
+
+[[bench]]
+name = "search_quality"
+harness = false

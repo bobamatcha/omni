@@ -48,6 +48,7 @@ pub mod analysis;
 pub mod context;
 pub mod intervention;
 pub mod mcp;
+pub mod search;
 pub mod semantic;
 
 // Re-exports
@@ -56,6 +57,9 @@ pub use context::{ContextChunk, ContextQuery, ContextResult, ContextSynthesizer}
 pub use discovery::FileDiscovery;
 pub use incremental::IncrementalIndexer;
 pub use intervention::InterventionEngine;
+pub use search::{
+    Bm25Index, HybridSearch, HybridSearchConfig, HybridSearchResult, SearchQualityMetrics,
+};
 pub use state::{IndexStats, OciState, SharedState, create_state};
 pub use types::*;
 
