@@ -38,7 +38,35 @@ cd omni
 cargo build --release
 ```
 
+### CLI (Recommended for AI Agents)
+
+The `omni` CLI is the simplest way to use OCI:
+
+```bash
+# Index a workspace
+omni index --workspace /path/to/repo
+
+# Search for code
+omni search --workspace /path/to/repo "parse configuration"
+
+# Find a symbol
+omni symbol --workspace /path/to/repo HybridSearch
+
+# Find callers of a function
+omni calls --workspace /path/to/repo my_function
+
+# Analyze dead code
+omni analyze --workspace /path/to/repo dead-code
+
+# Get JSON output (for automation)
+omni symbol --workspace /path/to/repo --json OciState
+```
+
+The CLI outputs human-readable text by default, or JSON with `--json` for easy parsing by AI agents.
+
 ### Running the MCP Server
+
+For advanced integration, OCI also provides an MCP server:
 
 ```bash
 # Set the workspace directory to index
