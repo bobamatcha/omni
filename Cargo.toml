@@ -20,6 +20,7 @@ futures = "0.3"
 # Parsing
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23.2"
 
 # Graph
 petgraph = "0.7"

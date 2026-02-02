@@ -31,6 +31,7 @@ use clap::{Parser, Subcommand};
 use omni_index::{
     create_state, DeadCodeAnalyzer, IncrementalIndexer, SymbolDef,
 };
+use omni_index::export::export_engram_memory;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -71,6 +72,13 @@ enum Commands {
         force: bool,
     },
 
+    /// Index multiple workspaces in one command
+    IndexAll {
+        /// Workspaces to analyze
+        #[arg(required = true)]
+        workspaces: Vec<PathBuf>,
+    },
+
     /// Search for code using hybrid (keyword + semantic) search
     Search {
         /// Search query
@@ -109,6 +117,21 @@ enum Commands {
     Analyze {
         /// Analysis type: dead-code, coverage, churn
         analysis_type: String,
+    },
+
+    /// Export a context summary for downstream tools (e.g., Engram)
+    Export {
+        /// Export format: engram
+        #[arg(long, default_value = "engram")]
+        format: String,
+
+        /// Max files to include in the summary
+        #[arg(long, default_value = "20")]
+        max_files: usize,
+
+        /// Max symbols to include in the summary
+        #[arg(long, default_value = "40")]
+        max_symbols: usize,
     },
 }
 
@@ -167,6 +190,22 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
                 symbols: stats.symbol_count as usize,
                 workspace: workspace.display().to_string(),
             })
+        }
+        Commands::IndexAll { workspaces } => {
+            let mut results = Vec::with_capacity(workspaces.len());
+            for ws in workspaces {
+                let ws_path = ws.canonicalize().unwrap_or_else(|_| ws.clone());
+                let ws_state = create_state(ws_path.clone());
+                indexer.full_index(&ws_state, &ws_path).await?;
+                let stats = ws_state.stats();
+                results.push(IndexAllResult {
+                    workspace: ws_path.display().to_string(),
+                    files: stats.file_count as usize,
+                    symbols: stats.symbol_count as usize,
+                    call_edges: stats.call_edge_count as usize,
+                });
+            }
+            Ok(Output::IndexAll { results })
         }
 
         Commands::Search { query, limit } => {
@@ -306,6 +345,23 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
                 other
             )),
         },
+        Commands::Export {
+            format,
+            max_files,
+            max_symbols,
+        } => {
+            indexer.full_index(&state, workspace).await?;
+            match format.as_str() {
+                "engram" => {
+                    let export = export_engram_memory(&state, workspace, *max_files, *max_symbols)?;
+                    Ok(Output::ExportEngram { export })
+                }
+                other => Err(anyhow::anyhow!(
+                    "Unknown export format: {}. Use: engram",
+                    other
+                )),
+            }
+        }
     }
 }
 
@@ -316,6 +372,9 @@ enum Output {
         files: usize,
         symbols: usize,
         workspace: String,
+    },
+    IndexAll {
+        results: Vec<IndexAllResult>,
     },
     Search {
         query: String,
@@ -334,6 +393,9 @@ enum Output {
         dead_count: usize,
         symbols: Vec<SymbolResult>,
     },
+    ExportEngram {
+        export: omni_index::export::EngramMemoryExport,
+    },
 }
 
 #[derive(serde::Serialize)]
@@ -343,6 +405,14 @@ struct SearchResult {
     file: String,
     line: usize,
     score: f32,
+}
+
+#[derive(serde::Serialize)]
+struct IndexAllResult {
+    workspace: String,
+    files: usize,
+    symbols: usize,
+    call_edges: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -370,6 +440,15 @@ fn print_human_readable(output: &Output) {
         } => {
             println!("Indexed {} files, {} symbols", files, symbols);
             println!("Workspace: {}", workspace);
+        }
+        Output::IndexAll { results } => {
+            println!("Indexed {} workspaces:", results.len());
+            for result in results {
+                println!(
+                    "  {}: {} files, {} symbols, {} call edges",
+                    result.workspace, result.files, result.symbols, result.call_edges
+                );
+            }
         }
         Output::Search { query, results } => {
             println!("Search: \"{}\"", query);
@@ -411,6 +490,9 @@ fn print_human_readable(output: &Output) {
                     println!("  {} ({}) at {}:{}", s.name, s.kind, s.file, s.line);
                 }
             }
+        }
+        Output::ExportEngram { export } => {
+            println!("{}", export.content);
         }
     }
 }

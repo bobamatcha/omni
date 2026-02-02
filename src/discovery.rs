@@ -20,6 +20,10 @@ impl Default for FileDiscovery {
     fn default() -> Self {
         let mut extensions = HashSet::new();
         extensions.insert("rs".to_string());
+        extensions.insert("ts".to_string());
+        extensions.insert("tsx".to_string());
+        extensions.insert("mts".to_string());
+        extensions.insert("cts".to_string());
         Self {
             extensions,
             ignore_patterns: Vec::new(),

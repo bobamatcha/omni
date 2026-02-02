@@ -45,6 +45,17 @@ fn test_index_command_on_self() {
 }
 
 #[test]
+fn test_index_all_command_on_multiple_repos() {
+    let (stdout, stderr, success) = run_cli(&[
+        "index-all",
+        env!("CARGO_MANIFEST_DIR"),
+        "/Users/amar/skillex/heartbeat",
+    ]);
+    assert!(success, "Index-all command should succeed: {}", stderr);
+    assert!(stdout.contains("Indexed"), "Should report indexing results: {}", stdout);
+}
+
+#[test]
 fn test_search_command() {
     // First index, then search
     let _ = run_cli(&["index", "--workspace", env!("CARGO_MANIFEST_DIR")]);

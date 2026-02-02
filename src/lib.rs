@@ -48,6 +48,7 @@
 //! ```
 
 pub mod discovery;
+pub mod export;
 pub mod fold;
 pub mod incremental;
 pub mod parsing;

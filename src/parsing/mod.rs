@@ -3,6 +3,7 @@
 //! Uses tree-sitter for incremental, error-tolerant parsing.
 
 pub mod rust;
+pub mod typescript;
 
 use crate::types::*;
 use anyhow::Result;
@@ -44,6 +45,8 @@ pub fn parser_for_file(path: &Path) -> Option<Box<dyn LanguageParser>> {
     let ext = path.extension()?.to_str()?;
     match ext.to_lowercase().as_str() {
         "rs" => Some(Box::new(rust::RustParser::new())),
+        "ts" | "mts" | "cts" => Some(Box::new(typescript::TypeScriptParser::new_typescript())),
+        "tsx" => Some(Box::new(typescript::TypeScriptParser::new_tsx())),
         _ => None,
     }
 }
