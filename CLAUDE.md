@@ -152,3 +152,12 @@ The codebase uses:
 - `RESEARCH.md` - Architectural specification and theory
 - `PLAN.md` - Implementation plan with phase status
 - `README.md` - User-facing documentation
+
+## Installed Skills
+- @.claude/skills/suggest-tests/SKILL.md
+- @.claude/skills/markdown-writer/SKILL.md
+- @.claude/skills/repo-hygiene/SKILL.md
+- @.claude/skills/doc-maintenance/SKILL.md
+- @.claude/skills/no-workarounds/SKILL.md
+- @.claude/skills/dogfood-skills/SKILL.md
+- @.claude/skills/tdd/SKILL.md

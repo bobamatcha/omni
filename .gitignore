@@ -1,3 +1,5 @@
 target/
 .fastembed_cache/
 .claude/
+.omni/
+**/.omni/

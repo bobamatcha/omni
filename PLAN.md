@@ -11,6 +11,10 @@ This plan implements the Omniscient Code Index (OCI) as described in `RESEARCH.m
 3. **Quality Assurance**: Dead code analysis, test coverage integration
 4. **Virtual Resources**: Memory-resident context documents via MCP
 
+## Completed
+
+- [x] Agent-grade index and query pass with BM25, incremental cache, MCP search, and tests (2026-02-02)
+
 ## Existing Code to Leverage
 
 From `AG1337/tools/`:
