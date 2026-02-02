@@ -5,7 +5,7 @@ use crate::types::{SymbolDef, TopologyNode};
 use anyhow::Result;
 use serde::Serialize;
 use std::cmp::Ordering;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize)]
@@ -47,7 +47,7 @@ pub struct EngramMetadata {
 
 pub fn export_engram_memory(
     state: &OciState,
-    workspace: &PathBuf,
+    workspace: &Path,
     max_files: usize,
     max_symbols: usize,
 ) -> Result<EngramMemoryExport> {
@@ -85,13 +85,11 @@ fn collect_top_files(state: &OciState, max_files: usize) -> Vec<ExportFile> {
     for entry in state.topology_metrics.iter() {
         let node_idx = *entry.key();
         let metrics = entry.value();
-        if let Some(node) = graph.node_weight(node_idx) {
-            if let TopologyNode::File { path, .. } = node {
-                files.push(ExportFile {
-                    path: path.display().to_string(),
-                    relevance: metrics.relevance_score,
-                });
-            }
+        if let Some(TopologyNode::File { path, .. }) = graph.node_weight(node_idx) {
+            files.push(ExportFile {
+                path: path.display().to_string(),
+                relevance: metrics.relevance_score,
+            });
         }
     }
 
@@ -126,7 +124,7 @@ fn to_export_symbol(state: &OciState, symbol: &SymbolDef) -> ExportSymbol {
 }
 
 fn format_engram_content(
-    workspace: &PathBuf,
+    workspace: &Path,
     stats: &crate::state::IndexStats,
     top_files: &[ExportFile],
     top_symbols: &[ExportSymbol],
@@ -142,10 +140,7 @@ fn format_engram_content(
     if !top_files.is_empty() {
         content.push_str("\nTop files by relevance:\n");
         for file in top_files {
-            content.push_str(&format!(
-                "- {} (score {:.4})\n",
-                file.path, file.relevance
-            ));
+            content.push_str(&format!("- {} (score {:.4})\n", file.path, file.relevance));
         }
     }
 

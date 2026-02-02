@@ -2,7 +2,8 @@
 //!
 //! Exposes OCI functionality via Model Context Protocol.
 
-use crate::incremental::IncrementalIndexer;
+use crate::incremental::{IncrementalIndexer, IndexOptions};
+use crate::query::{execute_query, load_search_index, load_search_state, parse_query_filters};
 use crate::state::{SharedState, create_state};
 use crate::topology::TopologyBuilder;
 use anyhow::Result;
@@ -103,15 +104,12 @@ pub struct AnalysisRequest {
 pub struct SearchRequest {
     #[schemars(description = "Search query")]
     pub query: String,
-    #[schemars(description = "Search type: semantic, bm25, hybrid")]
-    #[serde(default = "default_search_type")]
-    pub search_type: String,
     #[schemars(description = "Maximum number of results")]
-    pub max_results: Option<usize>,
-}
-
-fn default_search_type() -> String {
-    "hybrid".to_string()
+    pub top_k: Option<usize>,
+    #[schemars(description = "Optional root path override")]
+    pub root: Option<String>,
+    #[schemars(description = "Optional filters (path:..., ext:..., -path:...)")]
+    pub filters: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -167,46 +165,32 @@ impl OciServer {
 
         match req.op.as_str() {
             "build" | "rebuild" => {
-                if req.force || req.op == "rebuild" {
-                    drop(state);
-                    let state = self.state.write().await;
-                    match state.indexer.full_index(&state.oci_state, &root).await {
-                        Ok(()) => {
-                            let stats = state.oci_state.stats();
-                            Ok(CallToolResult::success(vec![Content::text(format!(
-                                "Index built successfully:\n- {} files\n- {} symbols\n- {} call edges\n- {} topology nodes",
-                                stats.file_count,
-                                stats.symbol_count,
-                                stats.call_edge_count,
-                                stats.topology_node_count
-                            ))]))
-                        }
-                        Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-                            "Index build failed: {}",
-                            e
-                        ))])),
-                    }
-                } else {
-                    let stats = oci.stats();
-                    if stats.file_count > 0 {
+                let force = req.force || req.op == "rebuild";
+                drop(state);
+                let state = self.state.write().await;
+                let options = IndexOptions {
+                    force,
+                    ..Default::default()
+                };
+                match state.indexer.index(&state.oci_state, &root, &options).await {
+                    Ok(report) => {
+                        let docs_total = load_search_state(&root)
+                            .ok()
+                            .and_then(|s| s.map(|s| s.docs.len()))
+                            .unwrap_or(0);
                         Ok(CallToolResult::success(vec![Content::text(format!(
-                            "Index already exists with {} files. Use force=true to rebuild.",
-                            stats.file_count
+                            "Index built successfully:\n- {} files\n- {} symbols\n- {} parsed\n- {} skipped\n- {} removed",
+                            report.total_files,
+                            docs_total,
+                            report.parsed_files,
+                            report.skipped_files,
+                            report.removed_files
                         ))]))
-                    } else {
-                        drop(state);
-                        let state = self.state.write().await;
-                        match state.indexer.full_index(&state.oci_state, &root).await {
-                            Ok(()) => {
-                                let stats = state.oci_state.stats();
-                                Ok(CallToolResult::success(vec![Content::text(format!(
-                                    "Index built: {} files, {} symbols",
-                                    stats.file_count, stats.symbol_count
-                                ))]))
-                            }
-                            Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
-                        }
                     }
+                    Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                        "Index build failed: {}",
+                        e
+                    ))])),
                 }
             }
             "status" => {
@@ -444,39 +428,73 @@ impl OciServer {
         }
     }
 
-    #[tool(description = "Search the codebase. Types: semantic, bm25, hybrid")]
+    #[tool(description = "Search the codebase using BM25 over symbol spans")]
     async fn search(
         &self,
         Parameters(req): Parameters<SearchRequest>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.read().await;
-        let _oci = &state.oci_state;
-        let _max = req.max_results.unwrap_or(10);
+        let root = req
+            .root
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| state.workspace_root.clone());
+        let top_k = req.top_k.unwrap_or(10);
+        let filters = req.filters.clone().unwrap_or_default();
+        let (query_text, parsed_filters) = parse_query_filters(&req.query, &filters);
 
-        match req.search_type.as_str() {
-            "semantic" => {
-                // TODO: Integrate with semantic search
-                Ok(CallToolResult::success(vec![Content::text(
-                    "Semantic search not yet implemented. Will use embeddings + HNSW.",
-                )]))
-            }
-            "bm25" => {
-                // TODO: Integrate with BM25 search
-                Ok(CallToolResult::success(vec![Content::text(
-                    "BM25 search not yet implemented. Will use inverted index.",
-                )]))
-            }
-            "hybrid" => {
-                // TODO: Combine semantic + BM25
-                Ok(CallToolResult::success(vec![Content::text(
-                    "Hybrid search not yet implemented. Will combine semantic + BM25 with RRF.",
-                )]))
-            }
-            _ => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Unknown search type: {}. Valid: semantic, bm25, hybrid",
-                req.search_type
-            ))])),
+        if query_text.trim().is_empty() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Query must include search terms.",
+            )]));
         }
+
+        drop(state);
+
+        let mut index = match load_search_index(&root) {
+            Ok(idx) => idx,
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Failed to load index: {}",
+                    e
+                ))]));
+            }
+        };
+        if index.is_none() {
+            let state = self.state.write().await;
+            let _ = state
+                .indexer
+                .index(&state.oci_state, &root, &IndexOptions::default())
+                .await;
+            index = match load_search_index(&root) {
+                Ok(idx) => idx,
+                Err(e) => {
+                    return Ok(CallToolResult::error(vec![Content::text(format!(
+                        "Failed to load index: {}",
+                        e
+                    ))]));
+                }
+            };
+        }
+
+        let Some(index) = index else {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Index not found; run omni index first.",
+            )]));
+        };
+
+        let mut response = execute_query(&index, &query_text, top_k, &parsed_filters);
+        response.query = req.query.clone();
+        let payload = serde_json::json!({
+            "ok": true,
+            "type": "query",
+            "root": response.root,
+            "query": response.query,
+            "top_k": response.top_k,
+            "results": response.results,
+        });
+        let json = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
+        Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
     #[tool(

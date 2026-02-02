@@ -42,7 +42,9 @@ fn typescript_scoped_names_use_workspace_relative_path() {
         .collect();
 
     assert!(
-        scoped_names.iter().any(|name| name.starts_with("file:src/alpha.ts::greet")),
+        scoped_names
+            .iter()
+            .any(|name| name.starts_with("file:src/alpha.ts::greet")),
         "expected scoped name to be workspace-relative, got: {scoped_names:?}"
     );
 }
@@ -68,5 +70,8 @@ fn typescript_calls_extract_computed_string_property() {
         .expect("calls");
 
     let has_expected = calls.iter().any(|call| call.callee_name == "foo-bar");
-    assert!(has_expected, "expected computed property call to use literal name");
+    assert!(
+        has_expected,
+        "expected computed property call to use literal name"
+    );
 }

@@ -6,16 +6,16 @@
 //!
 //! ```bash
 //! # Index a workspace
-//! omni index --workspace /path/to/repo
+//! omni index --root /path/to/repo
 //!
-//! # Search for code
-//! omni search --workspace /path/to/repo "parse configuration"
+//! # Query for code
+//! omni query --root /path/to/repo "parse configuration"
 //!
 //! # Find a symbol
-//! omni symbol --workspace /path/to/repo HybridSearch
+//! omni symbol --root /path/to/repo HybridSearch
 //!
 //! # Analyze dead code
-//! omni analyze --workspace /path/to/repo dead-code
+//! omni analyze --root /path/to/repo dead-code
 //! ```
 //!
 //! # Design for AI Agents
@@ -28,11 +28,11 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use omni_index::{
-    create_state, DeadCodeAnalyzer, IncrementalIndexer, SymbolDef,
-};
 use omni_index::export::export_engram_memory;
+use omni_index::query::{QueryResponse, execute_query, load_search_index, parse_query_filters};
+use omni_index::{DeadCodeAnalyzer, IncrementalIndexer, IndexOptions, SymbolDef, create_state};
 use std::path::PathBuf;
+use thiserror::Error;
 
 #[derive(Parser)]
 #[command(name = "omni")]
@@ -43,7 +43,7 @@ use std::path::PathBuf;
 omni helps AI coding assistants understand codebases.
 
 It provides:
-  - Hybrid search (keyword + semantic)
+  - BM25 search
   - Symbol lookup with call graph
   - Dead code analysis
   - Duplicate detection
@@ -54,9 +54,9 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Workspace directory to analyze
-    #[arg(short, long, global = true, default_value = ".")]
-    workspace: PathBuf,
+    /// Root directory to analyze
+    #[arg(short, long, global = true, default_value = ".", alias = "workspace")]
+    root: PathBuf,
 
     /// Output JSON instead of human-readable text
     #[arg(long, global = true)]
@@ -70,6 +70,30 @@ enum Commands {
         /// Force full rebuild (ignore cache)
         #[arg(long)]
         force: bool,
+
+        /// Include paths that match this glob (can be used multiple times)
+        #[arg(long, value_name = "GLOB")]
+        include: Vec<String>,
+
+        /// Exclude paths that match this glob (can be used multiple times)
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
+
+        /// Disable default excludes
+        #[arg(long)]
+        no_default_excludes: bool,
+
+        /// Include hidden files
+        #[arg(long)]
+        include_hidden: bool,
+
+        /// Include large files
+        #[arg(long)]
+        include_large: bool,
+
+        /// Max file size in bytes (ignored if --include-large)
+        #[arg(long, default_value = "2097152")]
+        max_file_size: u64,
     },
 
     /// Index multiple workspaces in one command
@@ -79,14 +103,18 @@ enum Commands {
         workspaces: Vec<PathBuf>,
     },
 
-    /// Search for code using hybrid (keyword + semantic) search
-    Search {
+    /// Query the index using BM25 search
+    Query {
         /// Search query
         query: String,
 
         /// Maximum results to return
-        #[arg(short = 'n', long, default_value = "10")]
-        limit: usize,
+        #[arg(short = 'k', long, default_value = "10")]
+        top_k: usize,
+
+        /// Additional filters (path:..., ext:..., -path:...)
+        #[arg(long, value_name = "FILTER")]
+        filters: Vec<String>,
     },
 
     /// Find symbol definitions by name
@@ -147,13 +175,17 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let workspace = cli.workspace.clone();
-    let workspace = workspace.canonicalize().unwrap_or(workspace);
+    let root = cli.root.clone();
+    let root = root.canonicalize().unwrap_or(root);
 
-    match run_command(&cli, &workspace).await {
+    match run_command(&cli, &root).await {
         Ok(output) => {
             if cli.json {
-                println!("{}", serde_json::to_string_pretty(&output)?);
+                let response = SuccessResponse {
+                    ok: true,
+                    data: output,
+                };
+                println!("{}", serde_json::to_string_pretty(&response)?);
             } else {
                 print_human_readable(&output);
             }
@@ -161,10 +193,8 @@ async fn main() -> Result<()> {
         }
         Err(e) => {
             if cli.json {
-                let err = serde_json::json!({
-                    "error": e.to_string()
-                });
-                eprintln!("{}", serde_json::to_string_pretty(&err)?);
+                let response = error_response(&e);
+                eprintln!("{}", serde_json::to_string_pretty(&response)?);
             } else {
                 eprintln!("Error: {}", e);
             }
@@ -173,22 +203,40 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
-    let state = create_state(workspace.clone());
+async fn run_command(cli: &Cli, root: &std::path::Path) -> Result<Output> {
+    let state = create_state(root.to_path_buf());
     let indexer = IncrementalIndexer::new();
 
     match &cli.command {
-        Commands::Index { force } => {
-            if *force {
-                indexer.full_index(&state, workspace).await?;
-            } else {
-                indexer.full_index(&state, workspace).await?;
-            }
-            let stats = state.stats();
+        Commands::Index {
+            force,
+            include,
+            exclude,
+            no_default_excludes,
+            include_hidden,
+            include_large,
+            max_file_size,
+        } => {
+            let options = IndexOptions {
+                force: *force,
+                include: include.clone(),
+                exclude: exclude.clone(),
+                no_default_excludes: *no_default_excludes,
+                include_hidden: *include_hidden,
+                include_large: *include_large,
+                max_file_size: *max_file_size,
+            };
+            let report = indexer.index(&state, root, &options).await?;
+            let docs_total = omni_index::query::load_search_state(root)?
+                .map(|s| s.docs.len())
+                .unwrap_or(0);
             Ok(Output::Index {
-                files: stats.file_count as usize,
-                symbols: stats.symbol_count as usize,
-                workspace: workspace.display().to_string(),
+                files: report.total_files,
+                symbols: docs_total,
+                parsed: report.parsed_files,
+                skipped: report.skipped_files,
+                removed: report.removed_files,
+                root: root.display().to_string(),
             })
         }
         Commands::IndexAll { workspaces } => {
@@ -196,61 +244,58 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
             for ws in workspaces {
                 let ws_path = ws.canonicalize().unwrap_or_else(|_| ws.clone());
                 let ws_state = create_state(ws_path.clone());
-                indexer.full_index(&ws_state, &ws_path).await?;
-                let stats = ws_state.stats();
+                let report = indexer
+                    .index(&ws_state, &ws_path, &IndexOptions::default())
+                    .await?;
+                let docs_total = omni_index::query::load_search_state(&ws_path)?
+                    .map(|s| s.docs.len())
+                    .unwrap_or(0);
                 results.push(IndexAllResult {
                     workspace: ws_path.display().to_string(),
-                    files: stats.file_count as usize,
-                    symbols: stats.symbol_count as usize,
-                    call_edges: stats.call_edge_count as usize,
+                    files: report.total_files,
+                    symbols: docs_total,
+                    call_edges: ws_state.stats().call_edge_count as usize,
                 });
             }
             Ok(Output::IndexAll { results })
         }
 
-        Commands::Search { query, limit } => {
-            // Ensure index exists
-            indexer.full_index(&state, workspace).await?;
-
-            // Simple search: find symbols that contain the query terms
-            // (Full hybrid search with embeddings would require more setup)
-            let query_lower = query.to_lowercase();
-            let mut results: Vec<SearchResult> = Vec::new();
-            
-            for entry in state.symbols.iter() {
-                let sym = entry.value();
-                let name = state.resolve(sym.scoped_name).to_lowercase();
-                
-                // Score based on match quality
-                let score = if name == query_lower {
-                    1.0 // Exact match
-                } else if name.contains(&query_lower) {
-                    0.5 // Substring match
-                } else {
-                    continue;
-                };
-                
-                results.push(SearchResult {
-                    symbol: state.resolve(sym.scoped_name).to_string(),
-                    kind: format!("{:?}", sym.kind),
-                    file: sym.location.file.display().to_string(),
-                    line: sym.location.start_line,
-                    score,
-                });
+        Commands::Query {
+            query,
+            top_k,
+            filters,
+        } => {
+            let (query_text, parsed_filters) = parse_query_filters(query, filters);
+            if query_text.trim().is_empty() {
+                return Err(CliError::invalid_query("Query must include search terms").into());
             }
-            
-            // Sort by score descending
-            results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-            results.truncate(*limit);
 
-            Ok(Output::Search {
-                query: query.clone(),
-                results,
-            })
+            let mut index = load_search_index(root)?;
+            if index.is_none() {
+                if !cli.json {
+                    eprintln!("Index not found. Building index...");
+                }
+                indexer
+                    .index(&state, root, &IndexOptions::default())
+                    .await?;
+                index = load_search_index(root)?;
+            }
+
+            let Some(index) = index else {
+                return Err(CliError::index_missing("Index not found; run `omni index`").into());
+            };
+
+            let mut response = execute_query(&index, &query_text, *top_k, &parsed_filters);
+            response.query = query.clone();
+            Ok(Output::Query { response })
         }
 
-        Commands::Symbol { name, scoped, limit } => {
-            indexer.full_index(&state, workspace).await?;
+        Commands::Symbol {
+            name,
+            scoped,
+            limit,
+        } => {
+            indexer.full_index(&state, root).await?;
 
             let symbols: Vec<SymbolDef> = if *scoped {
                 // For scoped lookup, try to find the symbol directly
@@ -276,20 +321,19 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
         }
 
         Commands::Calls { symbol, direction } => {
-            indexer.full_index(&state, workspace).await?;
+            indexer.full_index(&state, root).await?;
 
             let results: Vec<CallResult> = match direction.as_str() {
-                "callers" => {
-                    state.find_callers(symbol)
-                        .into_iter()
-                        .map(|edge| CallResult {
-                            caller: state.resolve(edge.caller).to_string(),
-                            callee: edge.callee_name.clone(),
-                            file: edge.location.file.display().to_string(),
-                            line: edge.location.start_line,
-                        })
-                        .collect()
-                }
+                "callers" => state
+                    .find_callers(symbol)
+                    .into_iter()
+                    .map(|edge| CallResult {
+                        caller: state.resolve(edge.caller).to_string(),
+                        callee: edge.callee_name.clone(),
+                        file: edge.location.file.display().to_string(),
+                        line: edge.location.start_line,
+                    })
+                    .collect(),
                 "callees" => {
                     // For callees, we need the scoped name of the caller
                     let symbols = state.find_by_name(symbol);
@@ -319,7 +363,7 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
 
         Commands::Analyze { analysis_type } => match analysis_type.as_str() {
             "dead-code" => {
-                indexer.full_index(&state, workspace).await?;
+                indexer.full_index(&state, root).await?;
                 let analyzer = DeadCodeAnalyzer::new();
                 let report = analyzer.analyze(&state);
 
@@ -350,10 +394,10 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
             max_files,
             max_symbols,
         } => {
-            indexer.full_index(&state, workspace).await?;
+            indexer.full_index(&state, root).await?;
             match format.as_str() {
                 "engram" => {
-                    let export = export_engram_memory(&state, workspace, *max_files, *max_symbols)?;
+                    let export = export_engram_memory(&state, root, *max_files, *max_symbols)?;
                     Ok(Output::ExportEngram { export })
                 }
                 other => Err(anyhow::anyhow!(
@@ -366,19 +410,22 @@ async fn run_command(cli: &Cli, workspace: &PathBuf) -> Result<Output> {
 }
 
 #[derive(serde::Serialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "lowercase")]
 enum Output {
     Index {
         files: usize,
         symbols: usize,
-        workspace: String,
+        parsed: usize,
+        skipped: usize,
+        removed: usize,
+        root: String,
     },
     IndexAll {
         results: Vec<IndexAllResult>,
     },
-    Search {
-        query: String,
-        results: Vec<SearchResult>,
+    Query {
+        #[serde(flatten)]
+        response: QueryResponse,
     },
     Symbols {
         query: String,
@@ -399,12 +446,71 @@ enum Output {
 }
 
 #[derive(serde::Serialize)]
-struct SearchResult {
-    symbol: String,
-    kind: String,
-    file: String,
-    line: usize,
-    score: f32,
+struct SuccessResponse<T> {
+    ok: bool,
+    #[serde(flatten)]
+    data: T,
+}
+
+#[derive(serde::Serialize)]
+struct ErrorResponse {
+    ok: bool,
+    error: ErrorInfo,
+}
+
+#[derive(serde::Serialize)]
+struct ErrorInfo {
+    code: String,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Error)]
+enum CliError {
+    #[error("{0}")]
+    IndexMissing(String),
+    #[error("{0}")]
+    InvalidQuery(String),
+}
+
+impl CliError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::IndexMissing(_) => "index_missing",
+            Self::InvalidQuery(_) => "invalid_query",
+        }
+    }
+
+    fn index_missing(message: &str) -> Self {
+        Self::IndexMissing(message.to_string())
+    }
+
+    fn invalid_query(message: &str) -> Self {
+        Self::InvalidQuery(message.to_string())
+    }
+}
+
+fn error_response(err: &anyhow::Error) -> ErrorResponse {
+    if let Some(cli_err) = err.downcast_ref::<CliError>() {
+        return ErrorResponse {
+            ok: false,
+            error: ErrorInfo {
+                code: cli_err.code().to_string(),
+                message: cli_err.to_string(),
+                details: None,
+            },
+        };
+    }
+
+    ErrorResponse {
+        ok: false,
+        error: ErrorInfo {
+            code: "internal".to_string(),
+            message: err.to_string(),
+            details: None,
+        },
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -436,10 +542,17 @@ fn print_human_readable(output: &Output) {
         Output::Index {
             files,
             symbols,
-            workspace,
+            parsed,
+            skipped,
+            removed,
+            root,
         } => {
             println!("Indexed {} files, {} symbols", files, symbols);
-            println!("Workspace: {}", workspace);
+            println!(
+                "Parsed: {}, skipped: {}, removed: {}",
+                parsed, skipped, removed
+            );
+            println!("Root: {}", root);
         }
         Output::IndexAll { results } => {
             println!("Indexed {} workspaces:", results.len());
@@ -450,13 +563,13 @@ fn print_human_readable(output: &Output) {
                 );
             }
         }
-        Output::Search { query, results } => {
-            println!("Search: \"{}\"", query);
-            println!("Found {} results:", results.len());
-            for r in results {
+        Output::Query { response } => {
+            println!("Query: \"{}\"", response.query);
+            println!("Found {} results:", response.results.len());
+            for r in &response.results {
                 println!(
-                    "  {:.2} {} ({}) at {}:{}",
-                    r.score, r.symbol, r.kind, r.file, r.line
+                    "  {:.2} {} at {}:{}",
+                    r.score, r.symbol, r.file, r.start_line
                 );
             }
         }

@@ -3,6 +3,7 @@
 //! The OciState holds all three graph layers and provides thread-safe access
 //! for concurrent queries and updates.
 
+use crate::search::Bm25Index;
 use crate::semantic::SemanticIndex;
 use crate::types::*;
 use dashmap::DashMap;
@@ -63,7 +64,7 @@ pub struct OciState {
     // Search Indices (lazy)
     // ========================================================================
     /// BM25 index, built on demand
-    pub bm25_index: OnceLock<Bm25Index>,
+    pub bm25_index: RwLock<Option<Bm25Index>>,
 
     // ========================================================================
     // Metadata
@@ -107,7 +108,7 @@ impl OciState {
             file_id_counter: AtomicU32::new(0),
 
             // Search
-            bm25_index: OnceLock::new(),
+            bm25_index: RwLock::new(None),
 
             // Metadata
             interner: ThreadedRodeo::default(),
@@ -265,8 +266,35 @@ impl OciState {
             call_edge_count: self.call_edges.read().len() as u32,
             topology_node_count: self.topology.read().node_count() as u32,
             has_semantic_index: self.semantic_index.get().is_some(),
-            has_bm25_index: self.bm25_index.get().is_some(),
+            has_bm25_index: self.bm25_index.read().is_some(),
         }
+    }
+
+    /// Reset all state to empty.
+    pub fn reset(&self) {
+        {
+            let mut graph = self.topology.write();
+            graph.clear();
+        }
+        self.path_to_node.clear();
+        self.topology_metrics.clear();
+
+        self.symbols.clear();
+        self.name_to_scoped.clear();
+        self.file_symbols.clear();
+        self.call_edges.write().clear();
+        self.imports.clear();
+
+        self.file_contents.clear();
+        self.file_ids.clear();
+        self.file_id_counter.store(0, Ordering::SeqCst);
+
+        *self.bm25_index.write() = None;
+
+        *self.git_hash.write() = None;
+        *self.last_indexed.write() = None;
+        self.file_count.store(0, Ordering::SeqCst);
+        self.symbol_count.store(0, Ordering::SeqCst);
     }
 }
 
@@ -279,16 +307,6 @@ pub struct IndexStats {
     pub topology_node_count: u32,
     pub has_semantic_index: bool,
     pub has_bm25_index: bool,
-}
-
-// ============================================================================
-// Placeholder types (to be implemented in separate modules)
-// ============================================================================
-
-/// Placeholder for BM25 index (implemented in search module).
-pub struct Bm25Index {
-    // Will hold inverted index
-    _placeholder: (),
 }
 
 /// Thread-safe shared state handle.

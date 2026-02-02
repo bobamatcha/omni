@@ -62,6 +62,9 @@ impl TopologyBuilder {
 
         // Add all files to topology
         for file in files {
+            if parser_for_file(&file).is_none() {
+                continue;
+            }
             if let Err(e) = self.add_file(state, &file) {
                 tracing::warn!("Failed to add file {:?}: {}", file, e);
             }

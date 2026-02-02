@@ -47,11 +47,13 @@
 //! let results = state.find_by_name("my_function");
 //! ```
 
+pub mod cache;
 pub mod discovery;
 pub mod export;
 pub mod fold;
 pub mod incremental;
 pub mod parsing;
+pub mod query;
 pub mod state;
 pub mod topology;
 pub mod types;
@@ -66,11 +68,14 @@ pub mod semantic;
 
 // Re-exports
 pub use analysis::DeadCodeAnalyzer;
+pub use cache::{FileFingerprint, IndexManifest};
 pub use context::{ContextChunk, ContextQuery, ContextResult, ContextSynthesizer};
 pub use discovery::FileDiscovery;
 pub use fold::{FunctionSignature, fold_to_signatures, parse_single_file};
 pub use incremental::IncrementalIndexer;
+pub use incremental::{IndexOptions, IndexReport};
 pub use intervention::InterventionEngine;
+pub use query::{QueryFilters, QueryResponse, QueryResult, SearchDoc, SearchIndex, SearchState};
 pub use search::{
     Bm25Index, HybridSearch, HybridSearchConfig, HybridSearchResult, SearchQualityMetrics,
 };

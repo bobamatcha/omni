@@ -9,10 +9,9 @@ mod bm25;
 
 pub use bm25::{
     Bm25Index, Bm25Params, Bm25SearchResult, FieldWeights, extract_doc_comments,
-    extract_identifiers, extract_string_literals, path_tokens,
+    extract_identifiers, extract_string_literals, path_tokens, tokenize,
 };
 
-use crate::types::InternedString;
 use std::collections::HashMap;
 
 /// Configuration for hybrid search.
@@ -51,8 +50,8 @@ impl Default for HybridSearchConfig {
 /// Result from hybrid search.
 #[derive(Debug, Clone)]
 pub struct HybridSearchResult {
-    /// Symbol identifier.
-    pub symbol: InternedString,
+    /// Document identifier.
+    pub doc_id: u32,
     /// Combined score.
     pub score: f32,
     /// Semantic similarity score (if available).
@@ -97,8 +96,8 @@ impl HybridSearch {
     pub fn search(
         &self,
         query: &str,
-        semantic_results: Vec<(InternedString, f32)>,
-        bm25_results: Vec<(InternedString, f32)>,
+        semantic_results: Vec<(u32, f32)>,
+        bm25_results: Vec<(u32, f32)>,
     ) -> Vec<HybridSearchResult> {
         if self.config.use_rrf {
             self.search_rrf(query, semantic_results, bm25_results)
@@ -114,28 +113,27 @@ impl HybridSearch {
     fn search_rrf(
         &self,
         _query: &str,
-        semantic_results: Vec<(InternedString, f32)>,
-        bm25_results: Vec<(InternedString, f32)>,
+        semantic_results: Vec<(u32, f32)>,
+        bm25_results: Vec<(u32, f32)>,
     ) -> Vec<HybridSearchResult> {
-        let mut scores: HashMap<InternedString, (f32, Option<f32>, Option<f32>, FoundBy)> =
-            HashMap::new();
+        let mut scores: HashMap<u32, (f32, Option<f32>, Option<f32>, FoundBy)> = HashMap::new();
         let k = self.config.rrf_k;
 
         // Add semantic results with RRF scoring
-        for (rank, (symbol, sim_score)) in semantic_results.iter().enumerate() {
+        for (rank, (doc_id, sim_score)) in semantic_results.iter().enumerate() {
             let rrf_score = self.config.semantic_weight / (k + rank as f32 + 1.0);
             scores.insert(
-                *symbol,
+                *doc_id,
                 (rrf_score, Some(*sim_score), None, FoundBy::SemanticOnly),
             );
         }
 
         // Add/merge BM25 results with RRF scoring
-        for (rank, (symbol, bm25_score)) in bm25_results.iter().enumerate() {
+        for (rank, (doc_id, bm25_score)) in bm25_results.iter().enumerate() {
             let rrf_score = self.config.bm25_weight / (k + rank as f32 + 1.0);
 
             scores
-                .entry(*symbol)
+                .entry(*doc_id)
                 .and_modify(|(score, _sem, bm, found)| {
                     *score += rrf_score;
                     *bm = Some(*bm25_score);
@@ -148,8 +146,8 @@ impl HybridSearch {
         let mut results: Vec<HybridSearchResult> = scores
             .into_iter()
             .map(
-                |(symbol, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
-                    symbol,
+                |(doc_id, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
+                    doc_id,
                     score,
                     semantic_score,
                     bm25_score,
@@ -173,17 +171,16 @@ impl HybridSearch {
     fn search_weighted(
         &self,
         _query: &str,
-        semantic_results: Vec<(InternedString, f32)>,
-        bm25_results: Vec<(InternedString, f32)>,
+        semantic_results: Vec<(u32, f32)>,
+        bm25_results: Vec<(u32, f32)>,
     ) -> Vec<HybridSearchResult> {
-        let mut scores: HashMap<InternedString, (f32, Option<f32>, Option<f32>, FoundBy)> =
-            HashMap::new();
+        let mut scores: HashMap<u32, (f32, Option<f32>, Option<f32>, FoundBy)> = HashMap::new();
 
         // Normalize semantic scores (already 0-1 for cosine similarity)
-        for (symbol, sim_score) in semantic_results {
+        for (doc_id, sim_score) in semantic_results {
             let weighted = self.config.semantic_weight * sim_score;
             scores.insert(
-                symbol,
+                doc_id,
                 (weighted, Some(sim_score), None, FoundBy::SemanticOnly),
             );
         }
@@ -194,7 +191,7 @@ impl HybridSearch {
             .map(|(_, s)| *s)
             .fold(0.0f32, |a, b| a.max(b));
 
-        for (symbol, bm25_score) in bm25_results {
+        for (doc_id, bm25_score) in bm25_results {
             let normalized = if max_bm25 > 0.0 {
                 bm25_score / max_bm25
             } else {
@@ -203,7 +200,7 @@ impl HybridSearch {
             let weighted = self.config.bm25_weight * normalized;
 
             scores
-                .entry(symbol)
+                .entry(doc_id)
                 .and_modify(|(score, _sem, bm, found)| {
                     *score += weighted;
                     *bm = Some(bm25_score);
@@ -216,8 +213,8 @@ impl HybridSearch {
         let mut results: Vec<HybridSearchResult> = scores
             .into_iter()
             .map(
-                |(symbol, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
-                    symbol,
+                |(doc_id, (score, semantic_score, bm25_score, found_by))| HybridSearchResult {
+                    doc_id,
                     score,
                     semantic_score,
                     bm25_score,
@@ -257,25 +254,21 @@ pub struct SearchQualityMetrics {
 
 impl SearchQualityMetrics {
     /// Calculate metrics given results and ground truth relevance.
-    pub fn calculate(
-        results: &[HybridSearchResult],
-        relevant: &[InternedString],
-        k: usize,
-    ) -> Self {
+    pub fn calculate(results: &[HybridSearchResult], relevant: &[u32], k: usize) -> Self {
         let relevant_set: std::collections::HashSet<_> = relevant.iter().copied().collect();
         let top_k = &results[..results.len().min(k)];
 
         // Precision@K
         let relevant_in_top_k = top_k
             .iter()
-            .filter(|r| relevant_set.contains(&r.symbol))
+            .filter(|r| relevant_set.contains(&r.doc_id))
             .count();
         let precision_at_k = relevant_in_top_k as f32 / k as f32;
 
         // Recall
         let found_relevant = results
             .iter()
-            .filter(|r| relevant_set.contains(&r.symbol))
+            .filter(|r| relevant_set.contains(&r.doc_id))
             .count();
         let recall = if relevant.is_empty() {
             0.0
@@ -287,7 +280,7 @@ impl SearchQualityMetrics {
         let mrr = results
             .iter()
             .enumerate()
-            .find(|(_, r)| relevant_set.contains(&r.symbol))
+            .find(|(_, r)| relevant_set.contains(&r.doc_id))
             .map(|(i, _)| 1.0 / (i + 1) as f32)
             .unwrap_or(0.0);
 
@@ -296,7 +289,7 @@ impl SearchQualityMetrics {
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                let rel = if relevant_set.contains(&r.symbol) {
+                let rel = if relevant_set.contains(&r.doc_id) {
                     1.0
                 } else {
                     0.0
@@ -344,24 +337,17 @@ impl SearchQualityMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lasso::ThreadedRodeo;
 
     #[test]
     fn test_rrf_basic() {
         let config = HybridSearchConfig::default();
         let search = HybridSearch::new(config);
 
-        // Create an interner and some test symbols
-        let interner = ThreadedRodeo::default();
-        let sym_a = InternedString::from(interner.get_or_intern("symbol_a"));
-        let sym_b = InternedString::from(interner.get_or_intern("symbol_b"));
-        let sym_c = InternedString::from(interner.get_or_intern("symbol_c"));
-
         // Semantic: A > B > C
-        let semantic = vec![(sym_a, 0.9), (sym_b, 0.7), (sym_c, 0.5)];
+        let semantic = vec![(1u32, 0.9), (2u32, 0.7), (3u32, 0.5)];
 
         // BM25: B > A > C (different ranking)
-        let bm25 = vec![(sym_b, 5.0), (sym_a, 4.0), (sym_c, 2.0)];
+        let bm25 = vec![(2u32, 5.0), (1u32, 4.0), (3u32, 2.0)];
 
         let results = search.search("test", semantic, bm25);
 
@@ -385,11 +371,8 @@ mod tests {
         };
         let search = HybridSearch::new(config);
 
-        let interner = ThreadedRodeo::default();
-        let sym_a = InternedString::from(interner.get_or_intern("symbol_a"));
-
-        let semantic = vec![(sym_a, 0.8)];
-        let bm25 = vec![(sym_a, 10.0)];
+        let semantic = vec![(1u32, 0.8)];
+        let bm25 = vec![(1u32, 10.0)];
 
         let results = search.search("test", semantic, bm25);
 

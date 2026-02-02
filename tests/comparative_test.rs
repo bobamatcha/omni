@@ -710,7 +710,12 @@ fn test_incremental_update_performance() {
 
     // Measure update time
     let start = Instant::now();
-    rt.block_on(async { indexer.update_file(&state, &file_to_update).await.unwrap() });
+    rt.block_on(async {
+        indexer
+            .update_file(&state, &file_to_update, temp.path())
+            .await
+            .unwrap()
+    });
     let update_time = start.elapsed();
 
     println!("Incremental update performance:");

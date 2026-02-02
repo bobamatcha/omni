@@ -7,7 +7,7 @@
 //! - String literals
 //! - General code tokens
 
-use crate::types::InternedString;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -71,23 +71,20 @@ impl Default for Bm25Params {
 }
 
 /// A posting entry for a term.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Posting {
     doc_id: u32,
     tf_by_field: [u32; 5],
 }
 
 /// Document statistics.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct DocStats {
-    symbol: InternedString,
     len_by_field: [u32; 5],
-    /// Original text for snippet extraction.
-    text: String,
 }
 
 /// BM25 search index.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Bm25Index {
     /// Inverted index: term -> postings list.
     inv: HashMap<String, Vec<Posting>>,
@@ -97,14 +94,11 @@ pub struct Bm25Index {
     avg_len_by_field: [f32; 5],
     /// Document frequency per term.
     df: HashMap<String, u32>,
-    /// Symbol to doc_id mapping.
-    symbol_to_doc: HashMap<InternedString, u32>,
 }
 
 /// Search result from BM25.
 #[derive(Debug, Clone)]
 pub struct Bm25SearchResult {
-    pub symbol: InternedString,
     pub score: f32,
     pub doc_id: u32,
 }
@@ -117,14 +111,17 @@ impl Bm25Index {
     /// Add a document (symbol) to the index.
     pub fn add_document(
         &mut self,
-        symbol: InternedString,
+        doc_id: u32,
         path_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         ident_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         doc_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         string_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         code_text: &str,
     ) {
-        let doc_id = self.docs.len() as u32;
+        if doc_id != self.docs.len() as u32 {
+            // Ensure dense doc_id assignment to keep doc_id == index.
+            panic!("Bm25Index::add_document expects sequential doc_id assignment");
+        }
         let mut lens = [0u32; 5];
 
         // Helper to add tokens
@@ -170,12 +167,7 @@ impl Bm25Index {
             add(Field::Code, t);
         }
 
-        self.symbol_to_doc.insert(symbol, doc_id);
-        self.docs.push(DocStats {
-            symbol,
-            len_by_field: lens,
-            text: code_text.to_string(),
-        });
+        self.docs.push(DocStats { len_by_field: lens });
     }
 
     /// Finalize the index (compute statistics).
@@ -260,11 +252,7 @@ impl Bm25Index {
         // Sort by score and return top-k
         let mut results: Vec<_> = scores
             .into_iter()
-            .map(|(doc_id, score)| Bm25SearchResult {
-                symbol: self.docs[doc_id as usize].symbol,
-                score,
-                doc_id,
-            })
+            .map(|(doc_id, score)| Bm25SearchResult { score, doc_id })
             .collect();
 
         results.sort_by(|a, b| {
@@ -284,13 +272,6 @@ impl Bm25Index {
     /// Check if the index is empty.
     pub fn is_empty(&self) -> bool {
         self.docs.is_empty()
-    }
-
-    /// Get document text for a symbol.
-    pub fn get_text(&self, symbol: InternedString) -> Option<&str> {
-        self.symbol_to_doc
-            .get(&symbol)
-            .map(|&doc_id| self.docs[doc_id as usize].text.as_str())
     }
 }
 
@@ -450,16 +431,10 @@ mod tests {
 
     #[test]
     fn test_bm25_basic() {
-        use lasso::ThreadedRodeo;
-
         let mut index = Bm25Index::new();
 
-        let interner = ThreadedRodeo::default();
-        let sym1 = InternedString::from(interner.get_or_intern("add_numbers"));
-        let sym2 = InternedString::from(interner.get_or_intern("subtract_numbers"));
-
         index.add_document(
-            sym1,
+            0,
             vec!["utils"],
             vec!["add", "numbers"],
             vec!["adds", "two", "integers"],
@@ -468,7 +443,7 @@ mod tests {
         );
 
         index.add_document(
-            sym2,
+            1,
             vec!["math"],
             vec!["subtract", "numbers"],
             vec!["subtracts", "integers"],
@@ -485,7 +460,7 @@ mod tests {
             10,
         );
         assert!(!results.is_empty());
-        assert_eq!(results[0].symbol, sym1);
+        assert_eq!(results[0].doc_id, 0);
     }
 
     #[test]

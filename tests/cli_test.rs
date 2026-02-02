@@ -10,10 +10,14 @@ fn run_cli(args: &[&str]) -> (String, String, bool) {
         .args(args)
         .output()
         .expect("Failed to execute omni CLI");
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     (stdout, stderr, output.status.success())
+}
+
+fn fixture_root() -> String {
+    format!("{}/tests/fixtures/basic", env!("CARGO_MANIFEST_DIR"))
 }
 
 #[test]
@@ -22,7 +26,7 @@ fn test_help_command() {
     assert!(success, "Help command should succeed");
     assert!(stdout.contains("omni"), "Should mention omni");
     assert!(stdout.contains("index"), "Should mention index command");
-    assert!(stdout.contains("search"), "Should mention search command");
+    assert!(stdout.contains("query"), "Should mention query command");
 }
 
 #[test]
@@ -33,81 +37,75 @@ fn test_version_command() {
 }
 
 #[test]
-fn test_index_command_on_self() {
-    // Index the omni repo itself
-    let (stdout, stderr, success) = run_cli(&[
-        "index",
-        "--workspace", env!("CARGO_MANIFEST_DIR"),
-    ]);
+fn test_index_command_on_fixture() {
+    let root = fixture_root();
+    let (stdout, stderr, success) = run_cli(&["index", "--root", &root]);
     assert!(success, "Index command should succeed: {}", stderr);
-    assert!(stdout.contains("Indexed") || stdout.contains("symbols"), 
-        "Should report indexing results: {}", stdout);
+    assert!(
+        stdout.contains("Indexed"),
+        "Should report indexing results: {}",
+        stdout
+    );
 }
 
 #[test]
 fn test_index_all_command_on_multiple_repos() {
-    let (stdout, stderr, success) = run_cli(&[
-        "index-all",
-        env!("CARGO_MANIFEST_DIR"),
-        "/Users/amar/skillex/heartbeat",
-    ]);
+    let root = fixture_root();
+    let (stdout, stderr, success) = run_cli(&["index-all", env!("CARGO_MANIFEST_DIR"), &root]);
     assert!(success, "Index-all command should succeed: {}", stderr);
-    assert!(stdout.contains("Indexed"), "Should report indexing results: {}", stdout);
+    assert!(
+        stdout.contains("Indexed"),
+        "Should report indexing results: {}",
+        stdout
+    );
 }
 
 #[test]
-fn test_search_command() {
-    // First index, then search
-    let _ = run_cli(&["index", "--workspace", env!("CARGO_MANIFEST_DIR")]);
-    
-    let (stdout, stderr, success) = run_cli(&[
-        "search",
-        "--workspace", env!("CARGO_MANIFEST_DIR"),
-        "hybrid search",
-    ]);
-    assert!(success, "Search command should succeed: {}", stderr);
-    // Should find something since omni has hybrid search code
+fn test_query_command() {
+    let root = fixture_root();
+    let _ = run_cli(&["index", "--root", &root]);
+
+    let (_stdout, stderr, success) = run_cli(&["query", "--root", &root, "add numbers"]);
+    assert!(success, "Query command should succeed: {}", stderr);
 }
 
 #[test]
 fn test_symbol_command() {
-    let _ = run_cli(&["index", "--workspace", env!("CARGO_MANIFEST_DIR")]);
-    
+    let _ = run_cli(&["index", "--root", env!("CARGO_MANIFEST_DIR")]);
+
     let (stdout, stderr, success) = run_cli(&[
         "symbol",
-        "--workspace", env!("CARGO_MANIFEST_DIR"),
+        "--root",
+        env!("CARGO_MANIFEST_DIR"),
         "HybridSearch",
     ]);
     assert!(success, "Symbol command should succeed: {}", stderr);
-    assert!(stdout.contains("HybridSearch"), "Should find HybridSearch: {}", stdout);
+    assert!(
+        stdout.contains("HybridSearch"),
+        "Should find HybridSearch: {}",
+        stdout
+    );
 }
 
 #[test]
 fn test_json_output() {
-    let _ = run_cli(&["index", "--workspace", env!("CARGO_MANIFEST_DIR")]);
-    
-    let (stdout, _, success) = run_cli(&[
-        "symbol",
-        "--workspace", env!("CARGO_MANIFEST_DIR"),
-        "--json",
-        "OciState",
-    ]);
+    let root = fixture_root();
+    let _ = run_cli(&["index", "--root", &root]);
+
+    let (stdout, _, success) = run_cli(&["query", "--root", &root, "--json", "add numbers"]);
     assert!(success, "JSON output should succeed");
-    // Should be valid JSON
-    let _: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("Output should be valid JSON");
+    let value: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Output should be valid JSON");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["type"], "query");
 }
 
 #[test]
 fn test_dead_code_analysis() {
-    let _ = run_cli(&["index", "--workspace", env!("CARGO_MANIFEST_DIR")]);
-    
-    let (stdout, stderr, success) = run_cli(&[
-        "analyze",
-        "--workspace", env!("CARGO_MANIFEST_DIR"),
-        "dead-code",
-    ]);
+    let _ = run_cli(&["index", "--root", env!("CARGO_MANIFEST_DIR")]);
+
+    let (stdout, stderr, success) =
+        run_cli(&["analyze", "--root", env!("CARGO_MANIFEST_DIR"), "dead-code"]);
     assert!(success, "Dead code analysis should succeed: {}", stderr);
-    // Should produce some output
     assert!(!stdout.is_empty(), "Should produce output");
 }

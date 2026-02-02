@@ -2,6 +2,8 @@
 
 A semantic, interventionist code indexer for AI coding agents. OCI provides deep code understanding through a three-layer hybrid graph architecture, going beyond what traditional language servers offer.
 
+Note: The current CLI and MCP `search` use BM25 only. Semantic embeddings and hybrid fusion are roadmap items.
+
 ## Target Use Cases
 
 This project is designed around two primary use cases (neither included in this repo, but they drive design decisions):
@@ -20,9 +22,8 @@ This project is designed around two primary use cases (neither included in this 
 | Dead code analysis | Yes | No |
 | Intervention engine | Yes | No |
 | PageRank relevance | Yes | No |
-| Semantic embeddings | Yes | No |
+| Semantic embeddings | Roadmap | No |
 | BM25 text search | Yes | No |
-| Hybrid search (BM25 + Semantic) | Yes | No |
 | Incremental updates | Yes | Yes |
 | Test coverage correlation | Yes | No |
 | Git churn analysis | Yes | No |
@@ -43,26 +44,41 @@ cargo build --release
 The `omni` CLI is the simplest way to use OCI:
 
 ```bash
-# Index a workspace
-omni index --workspace /path/to/repo
+# Index a repo
+omni index --root /path/to/repo
 
-# Search for code
-omni search --workspace /path/to/repo "parse configuration"
+# Query for code (BM25)
+omni query --root /path/to/repo "parse configuration"
 
 # Find a symbol
-omni symbol --workspace /path/to/repo HybridSearch
+omni symbol --root /path/to/repo HybridSearch
 
 # Find callers of a function
-omni calls --workspace /path/to/repo my_function
+omni calls --root /path/to/repo my_function
 
 # Analyze dead code
-omni analyze --workspace /path/to/repo dead-code
+omni analyze --root /path/to/repo dead-code
 
 # Get JSON output (for automation)
-omni symbol --workspace /path/to/repo --json OciState
+omni query --root /path/to/repo --json "parse configuration"
 ```
 
 The CLI outputs human-readable text by default, or JSON with `--json` for easy parsing by AI agents.
+
+### Default Excludes
+
+By default, omni skips common build and dependency directories plus lockfiles and binary assets. Examples:
+
+- Directories: `target/`, `node_modules/`, `.git/`, `dist/`, `build/`, `out/`, `coverage/`, `vendor/`, `.venv/`, `.next/`
+- Lockfiles: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`
+
+Use `--include`/`--exclude` or `--no-default-excludes` to override.
+
+### Performance Notes
+
+- Incremental indexing uses a persisted manifest to skip unchanged files.
+- Cache lives under `.omni/` in the repo root.
+- Use `omni index --force` to rebuild from scratch.
 
 ### Running the MCP Server
 
@@ -86,7 +102,7 @@ export OCI_WORKSPACE=/path/to/your/rust/repo
   "method": "tools/call",
   "params": {
     "name": "index",
-    "arguments": {"action": "build"}
+    "arguments": {"op": "build"}
   }
 }
 ```
@@ -104,7 +120,7 @@ export OCI_WORKSPACE=/path/to/your/rust/repo
 }
 ```
 
-**Search with hybrid (BM25 + semantic):**
+**Search with BM25:**
 ```json
 {
   "jsonrpc": "2.0",
@@ -125,7 +141,7 @@ export OCI_WORKSPACE=/path/to/your/rust/repo
   "method": "tools/call",
   "params": {
     "name": "analyze",
-    "arguments": {"analysis_type": "dead_code"}
+    "arguments": {"analysis": "dead_code"}
   }
 }
 ```
@@ -134,11 +150,11 @@ export OCI_WORKSPACE=/path/to/your/rust/repo
 
 | Tool | Description | Key Arguments |
 |------|-------------|---------------|
-| `index` | Build, rebuild, or check index status | `action`: "build", "rebuild", "status" |
+| `index` | Build, rebuild, or check index status | `op`: "build", "rebuild", "status" |
 | `find_symbol` | Find symbol definitions by name | `name`, `scoped`, `max_results` |
 | `find_calls` | Query call graph | `symbol`, `direction`: "callers" or "callees" |
-| `analyze` | Run analysis | `analysis_type`: "dead_code", "coverage", "churn" |
-| `search` | Hybrid BM25 + semantic search | `query`, `top_k` |
+| `analyze` | Run analysis | `analysis`: "dead_code", "coverage", "churn" |
+| `search` | BM25 search | `query`, `top_k` |
 | `context` | Generate context for a location | `file`, `line`, `token_budget` |
 | `intervention` | Check for naming conflicts/duplicates | `proposed_name`, `file` |
 | `topology` | Query module graph and PageRank | `query_type`: "modules", "pagerank", "imports" |
@@ -190,7 +206,7 @@ OCI uses a layered architecture with three interconnected graph layers:
 │     Dead code detection, coverage correlation, git churn     │
 ├─────────────────────────────────────────────────────────────┤
 │                     Layer 3: Search                          │
-│     Hybrid search: BM25 + Semantic embeddings + RRF fusion   │
+│     BM25 search (semantic/hybrid on roadmap)                 │
 ├─────────────────────────────────────────────────────────────┤
 │                     Layer 2: Symbols                         │
 │       Function/struct/trait definitions with call graph      │
@@ -200,7 +216,7 @@ OCI uses a layered architecture with three interconnected graph layers:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Hybrid Search Pipeline
+### Roadmap: Hybrid Search Pipeline
 
 ```
 Query
@@ -217,7 +233,7 @@ Query
                           Final Top-10 results
 ```
 
-The pipeline:
+The planned pipeline:
 1. **Embeddings for broad recall** - Fixes BM25's synonym blindness
 2. **BM25 for precision** - Protects against junk semantic matches
 3. **RRF fusion** - Combines rankings robustly (k=60, weights: semantic=0.4, bm25=0.6)
@@ -246,7 +262,7 @@ cargo bench
 # Individual benchmark suites
 cargo bench --bench indexing        # Indexing performance
 cargo bench --bench comparative     # OCI vs code-index comparison
-cargo bench --bench search_quality  # BM25 vs Semantic vs Hybrid
+cargo bench --bench search_quality  # legacy hybrid benchmark (roadmap)
 ```
 
 ### Indexing Performance
@@ -268,9 +284,9 @@ Query performance (50-file codebase):
 | Find callers | 1.8 us |
 | Find callers (method) | 3.3 us |
 
-### Search Quality
+### Roadmap: Search Quality
 
-The hybrid search combines BM25 (keyword matching) with semantic embeddings:
+Planned hybrid search combines BM25 (keyword matching) with semantic embeddings:
 
 | Query | BM25 MRR | Semantic MRR | Hybrid MRR | Found by Both |
 |-------|----------|--------------|------------|---------------|
@@ -291,7 +307,7 @@ The hybrid search combines BM25 (keyword matching) with semantic embeddings:
 
 4. **RRF fusion works robustly**: Reciprocal Rank Fusion combines rankings without needing score normalization.
 
-**Search Latency:**
+**Projected Search Latency (roadmap):**
 
 | Method | Latency |
 |--------|---------|
@@ -328,7 +344,7 @@ omni/
 │   ├── incremental.rs      # Incremental indexing
 │   ├── fold.rs             # Code folding utilities
 │   ├── search/
-│   │   ├── mod.rs          # Hybrid search
+│   │   ├── mod.rs          # Search (BM25, hybrid roadmap)
 │   │   └── bm25.rs         # BM25 text search
 │   ├── semantic/
 │   │   └── mod.rs          # Embedding layer

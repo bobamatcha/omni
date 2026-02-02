@@ -1,0 +1,14 @@
+{
+  "tool_version": "0.1.0",
+  "root": "/Users/amar/skillex/omni/tests/fixtures/basic",
+  "files": {
+    "src/extra.rs": {
+      "mtime_ms": 1770071547409,
+      "size_bytes": 78
+    },
+    "src/lib.rs": {
+      "mtime_ms": 1770071547407,
+      "size_bytes": 295
+    }
+  }
+}

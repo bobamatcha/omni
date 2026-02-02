@@ -285,7 +285,15 @@ fn walk_ts_symbols(
                         node,
                     );
                     scope_stack.push(name);
-                    walk_children(node, bytes, file, scope_stack, interner, symbols, walk_ts_symbols);
+                    walk_children(
+                        node,
+                        bytes,
+                        file,
+                        scope_stack,
+                        interner,
+                        symbols,
+                        walk_ts_symbols,
+                    );
                     scope_stack.pop();
                     return;
                 }
@@ -304,7 +312,15 @@ fn walk_ts_symbols(
                         node,
                     );
                     scope_stack.push(name);
-                    walk_children(node, bytes, file, scope_stack, interner, symbols, walk_ts_symbols);
+                    walk_children(
+                        node,
+                        bytes,
+                        file,
+                        scope_stack,
+                        interner,
+                        symbols,
+                        walk_ts_symbols,
+                    );
                     scope_stack.pop();
                     return;
                 }
@@ -323,7 +339,15 @@ fn walk_ts_symbols(
                         node,
                     );
                     scope_stack.push(name);
-                    walk_children(node, bytes, file, scope_stack, interner, symbols, walk_ts_symbols);
+                    walk_children(
+                        node,
+                        bytes,
+                        file,
+                        scope_stack,
+                        interner,
+                        symbols,
+                        walk_ts_symbols,
+                    );
                     scope_stack.pop();
                     return;
                 }
@@ -342,7 +366,15 @@ fn walk_ts_symbols(
                         node,
                     );
                     scope_stack.push(name);
-                    walk_children(node, bytes, file, scope_stack, interner, symbols, walk_ts_symbols);
+                    walk_children(
+                        node,
+                        bytes,
+                        file,
+                        scope_stack,
+                        interner,
+                        symbols,
+                        walk_ts_symbols,
+                    );
                     scope_stack.pop();
                     return;
                 }
@@ -400,7 +432,15 @@ fn walk_ts_symbols(
         _ => {}
     }
 
-    walk_children(node, bytes, file, scope_stack, interner, symbols, walk_ts_symbols);
+    walk_children(
+        node,
+        bytes,
+        file,
+        scope_stack,
+        interner,
+        symbols,
+        walk_ts_symbols,
+    );
 }
 
 fn walk_ts_calls(
@@ -512,13 +552,15 @@ fn walk_children(
     scope_stack: &mut Vec<String>,
     interner: &ThreadedRodeo,
     symbols: &mut Vec<SymbolDef>,
-    f: fn(Node, &[u8], &Path, &mut Vec<String>, &ThreadedRodeo, &mut Vec<SymbolDef>),
+    f: WalkFn,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         f(child, bytes, file, scope_stack, interner, symbols);
     }
 }
+
+type WalkFn = fn(Node, &[u8], &Path, &mut Vec<String>, &ThreadedRodeo, &mut Vec<SymbolDef>);
 
 fn walk_children_calls(
     node: Node,
