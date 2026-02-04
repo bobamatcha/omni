@@ -14,6 +14,27 @@ use std::process::Command;
 pub struct ChurnAnalyzer;
 
 impl ChurnAnalyzer {
+    fn remove_git_env(cmd: &mut Command) {
+        for (key, _) in std::env::vars_os() {
+            if let Some(key_str) = key.to_str() {
+                if key_str.starts_with("GIT_") {
+                    cmd.env_remove(&key);
+                }
+            }
+        }
+    }
+
+    /// Create a git command isolated from parent repo environment.
+    /// Removes all GIT_* vars that hooks may set, ensuring commands target the specified root.
+    /// Note: This intentionally ignores any externally-set GIT_DIR; callers must pass the
+    /// repo root explicitly via the `root` parameter.
+    fn git_cmd(root: &Path) -> Command {
+        let mut cmd = Command::new("git");
+        cmd.current_dir(root);
+        Self::remove_git_env(&mut cmd);
+        cmd
+    }
+
     /// Analyze git history for the given repository root.
     ///
     /// # Arguments
@@ -63,10 +84,9 @@ impl ChurnAnalyzer {
 
     /// Check if a directory is a git repository.
     fn is_git_repo(root: &Path) -> Result<bool> {
-        let output = Command::new("git")
+        let output = Self::git_cmd(root)
             .arg("rev-parse")
             .arg("--git-dir")
-            .current_dir(root)
             .output()
             .context("Failed to execute git command")?;
 
@@ -77,9 +97,8 @@ impl ChurnAnalyzer {
     fn get_changed_files(root: &Path, days: u32) -> Result<HashSet<PathBuf>> {
         let since = format!("{} days ago", days);
 
-        let output = Command::new("git")
+        let output = Self::git_cmd(root)
             .args(["log", "--since", &since, "--pretty=format:", "--name-only"])
-            .current_dir(root)
             .output()
             .context("Failed to get changed files from git")?;
 
@@ -103,7 +122,7 @@ impl ChurnAnalyzer {
         let since = format!("{} days ago", days);
 
         // Get commit hashes, authors, and dates for this file
-        let log_output = Command::new("git")
+        let log_output = Self::git_cmd(root)
             .args([
                 "log",
                 "--since",
@@ -113,7 +132,6 @@ impl ChurnAnalyzer {
                 "--",
                 file_path.to_str().unwrap_or(""),
             ])
-            .current_dir(root)
             .output()
             .context("Failed to get git log for file")?;
 
@@ -160,7 +178,7 @@ impl ChurnAnalyzer {
     fn get_line_stats(root: &Path, file_path: &Path, days: u32) -> Result<(u32, u32)> {
         let since = format!("{} days ago", days);
 
-        let output = Command::new("git")
+        let output = Self::git_cmd(root)
             .args([
                 "log",
                 "--since",
@@ -170,7 +188,6 @@ impl ChurnAnalyzer {
                 "--",
                 file_path.to_str().unwrap_or(""),
             ])
-            .current_dir(root)
             .output()
             .context("Failed to get numstat for file")?;
 
@@ -236,52 +253,87 @@ mod tests {
     use super::*;
     use std::fs;
     use std::process::Command;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    /// Lock to serialize tests that mutate process environment variables.
+    /// Required because Rust runs tests in parallel by default.
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn env_lock() -> &'static Mutex<()> {
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    /// Create a git command with isolated environment.
+    /// Removes all GIT_* env vars to prevent leaking parent repo state
+    /// (e.g., during pre-commit hooks).
+    fn git_cmd(repo_path: &std::path::Path) -> Command {
+        let mut cmd = Command::new("git");
+        cmd.current_dir(repo_path);
+        ChurnAnalyzer::remove_git_env(&mut cmd);
+        cmd
+    }
 
     /// Create a test git repository with some history.
     fn create_test_repo() -> Result<TempDir> {
         let temp_dir = TempDir::new()?;
         let repo_path = temp_dir.path();
 
-        // Initialize git repo
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
+        // Initialize git repo with explicit branch name
+        let output = git_cmd(repo_path)
+            .args(["init", "--initial-branch=main"])
             .output()?;
+        assert!(output.status.success(), "git init failed");
 
-        // Configure git
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()?;
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(repo_path)
-            .output()?;
-
-        // Create and commit a file
+        // Create and commit a file using -c flags to set config inline
+        // This avoids issues with pre-commit hooks or missing global config
         let test_file = repo_path.join("test.rs");
         fs::write(&test_file, "fn main() {}\n")?;
 
-        Command::new("git")
-            .args(["add", "test.rs"])
-            .current_dir(repo_path)
+        let output = git_cmd(repo_path).args(["add", "test.rs"]).output()?;
+        assert!(output.status.success(), "git add failed");
+
+        let output = git_cmd(repo_path)
+            .args([
+                "-c",
+                "user.name=Test User",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-gpg-sign",
+                "-m",
+                "Initial commit",
+            ])
             .output()?;
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()?;
+        assert!(
+            output.status.success(),
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         // Modify the file
         fs::write(&test_file, "fn main() {\n    println!(\"Hello\");\n}\n")?;
-        Command::new("git")
-            .args(["add", "test.rs"])
-            .current_dir(repo_path)
+
+        let output = git_cmd(repo_path).args(["add", "test.rs"]).output()?;
+        assert!(output.status.success(), "git add failed");
+
+        let output = git_cmd(repo_path)
+            .args([
+                "-c",
+                "user.name=Test User",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--no-gpg-sign",
+                "-m",
+                "Add println",
+            ])
             .output()?;
-        Command::new("git")
-            .args(["commit", "-m", "Add println"])
-            .current_dir(repo_path)
-            .output()?;
+        assert!(
+            output.status.success(),
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         Ok(temp_dir)
     }
@@ -294,14 +346,43 @@ mod tests {
         assert!(!ChurnAnalyzer::is_git_repo(temp_dir.path()).unwrap());
 
         // Initialize git
-        Command::new("git")
-            .args(["init"])
-            .current_dir(temp_dir.path())
-            .output()
-            .unwrap();
+        git_cmd(temp_dir.path()).args(["init"]).output().unwrap();
 
         // Now it is a git repo
         assert!(ChurnAnalyzer::is_git_repo(temp_dir.path()).unwrap());
+    }
+
+    #[test]
+    fn test_git_env_isolation() {
+        // Serialize env mutation to avoid races with parallel tests
+        let _guard = env_lock().lock().unwrap();
+
+        // Create two separate repos
+        let repo_a = TempDir::new().unwrap();
+        let repo_b = TempDir::new().unwrap();
+
+        let output_a = git_cmd(repo_a.path()).args(["init"]).output().unwrap();
+        assert!(output_a.status.success(), "git init repo_a failed");
+
+        let output_b = git_cmd(repo_b.path()).args(["init"]).output().unwrap();
+        assert!(output_b.status.success(), "git init repo_b failed");
+
+        // Set GIT_DIR to point at repo_b
+        let git_dir_b = repo_b.path().join(".git");
+        // SAFETY: Env mutation is serialized via env_lock().
+        unsafe { std::env::set_var("GIT_DIR", &git_dir_b) };
+
+        // is_git_repo should still correctly identify repo_a (ignoring GIT_DIR env)
+        let result = ChurnAnalyzer::is_git_repo(repo_a.path()).unwrap();
+
+        // Clean up before assert to ensure cleanup even on failure
+        // SAFETY: Env mutation is serialized via env_lock().
+        unsafe { std::env::remove_var("GIT_DIR") };
+
+        assert!(
+            result,
+            "is_git_repo should use provided path, not GIT_DIR env"
+        );
     }
 
     #[test]
@@ -354,16 +435,30 @@ mod tests {
         let hotspot_file = repo_path.join("hotspot.rs");
         for i in 1..=5 {
             fs::write(&hotspot_file, format!("// Version {}\n", i)).unwrap();
-            Command::new("git")
+            let output = git_cmd(repo_path)
                 .args(["add", "hotspot.rs"])
-                .current_dir(repo_path)
                 .output()
                 .unwrap();
-            Command::new("git")
-                .args(["commit", "-m", &format!("Update {}", i)])
-                .current_dir(repo_path)
+            assert!(output.status.success(), "git add failed");
+
+            let output = git_cmd(repo_path)
+                .args([
+                    "-c",
+                    "user.name=Test User",
+                    "-c",
+                    "user.email=test@example.com",
+                    "commit",
+                    "--no-gpg-sign",
+                    "-m",
+                    &format!("Update {}", i),
+                ])
                 .output()
                 .unwrap();
+            assert!(
+                output.status.success(),
+                "git commit failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         let report = ChurnAnalyzer::analyze(repo_path, 365).unwrap();

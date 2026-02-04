@@ -1,11 +1,29 @@
 #!/bin/bash
-# Pre-commit hook: Verify Claudette contract tests pass in core build.
+# Pre-commit hook for OCI
+# Runs the same checks as CI: format, clippy, and tests.
 #
 # Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 
 set -e
 
-echo "Running contract tests (core build)..."
-cargo test --no-default-features --features core --test contract_test --quiet
+echo "=== Pre-commit Checks ==="
 
-echo "Contract tests passed."
+# 1. Format check (fast, catches most common issues)
+echo "Checking formatting..."
+if ! cargo fmt --all -- --check; then
+    echo "FAILED: Run 'cargo fmt --all' to fix"
+    exit 1
+fi
+
+# 2. Clippy (linting)
+echo "Running clippy..."
+cargo clippy --all-targets -- -D warnings -A clippy::manual_range_contains
+
+# 3. Tests
+echo "Running tests..."
+cargo test --lib
+cargo test --test contract_test -- --test-threads=1
+cargo test --test property_tests
+cargo test --test comparative_test
+
+echo "=== All checks passed ==="

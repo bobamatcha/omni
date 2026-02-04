@@ -28,11 +28,11 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+#[cfg(feature = "analysis")]
+use omni_index::DeadCodeAnalyzer;
 use omni_index::export::export_engram_memory;
 use omni_index::query::{QueryResponse, execute_query, load_search_index, parse_query_filters};
 use omni_index::{IncrementalIndexer, IndexOptions, SymbolDef, create_state};
-#[cfg(feature = "analysis")]
-use omni_index::DeadCodeAnalyzer;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -437,7 +437,9 @@ async fn run_command(cli: &Cli, root: &std::path::Path) -> Result<Output> {
         } => {
             // Resolve workspace: -w flag overrides global --root
             let search_root = workspace.as_ref().unwrap_or(&cli.root);
-            let search_root = search_root.canonicalize().unwrap_or_else(|_| search_root.clone());
+            let search_root = search_root
+                .canonicalize()
+                .unwrap_or_else(|_| search_root.clone());
 
             // Delegate to query logic
             let (query_text, parsed_filters) = parse_query_filters(query, &[]);
@@ -696,7 +698,10 @@ fn print_human_readable(output: &Output) {
         Output::Search { results } => {
             println!("Found {} results:", results.len());
             for r in results {
-                println!("  {:.2} {} ({}) at {}:{}", r.score, r.symbol, r.kind, r.file, r.line);
+                println!(
+                    "  {:.2} {} ({}) at {}:{}",
+                    r.score, r.symbol, r.kind, r.file, r.line
+                );
             }
         }
     }

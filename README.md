@@ -2,7 +2,6 @@
 
 [![Crates.io](https://img.shields.io/crates/v/omni-index.svg)](https://crates.io/crates/omni-index)
 [![Documentation](https://docs.rs/omni-index/badge.svg)](https://docs.rs/omni-index)
-[![CI](https://github.com/bobamatcha/omni/actions/workflows/ci.yml/badge.svg)](https://github.com/bobamatcha/omni/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A fast, deterministic BM25 index and query tool for AI agents.
@@ -210,13 +209,11 @@ Test organization:
 
 ### Pre-commit Hook
 
-Enforce contract stability with a pre-commit hook:
-
 ```bash
 ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 ```
 
-The hook runs contract tests in core build before each commit.
+Runs format, clippy, and tests before each commit.
 
 ## Architecture
 

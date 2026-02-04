@@ -35,7 +35,11 @@ enum SearchWeakness {
 /// Create a test corpus with known symbols.
 /// Returns (name_to_doc_id mapping, doc_id_to_name mapping, symbols as (doc_id, path, code))
 #[allow(clippy::type_complexity)]
-fn create_test_corpus() -> (HashMap<String, u32>, Vec<String>, Vec<(u32, String, String)>) {
+fn create_test_corpus() -> (
+    HashMap<String, u32>,
+    Vec<String>,
+    Vec<(u32, String, String)>,
+) {
     let mut name_to_id: HashMap<String, u32> = HashMap::new();
     let mut id_to_name: Vec<String> = Vec::new();
 
@@ -333,9 +337,7 @@ fn simulate_semantic_search(
         if query_lower.contains(pattern) || pattern.contains(&query_lower) {
             return results
                 .iter()
-                .filter_map(|(name, score)| {
-                    name_to_id.get(*name).map(|&doc_id| (doc_id, *score))
-                })
+                .filter_map(|(name, score)| name_to_id.get(*name).map(|&doc_id| (doc_id, *score)))
                 .take(top_k)
                 .collect();
         }

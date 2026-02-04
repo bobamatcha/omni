@@ -66,7 +66,10 @@ fn contract_search_json_schema() {
     if let Some(results) = json["results"].as_array() {
         if !results.is_empty() {
             let first = &results[0];
-            assert!(first["symbol"].is_string(), "Result must have symbol: string");
+            assert!(
+                first["symbol"].is_string(),
+                "Result must have symbol: string"
+            );
             assert!(first["kind"].is_string(), "Result must have kind: string");
             assert!(first["file"].is_string(), "Result must have file: string");
             assert!(first["line"].is_number(), "Result must have line: number");

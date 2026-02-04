@@ -438,7 +438,12 @@ fn bench_incremental(c: &mut Criterion) {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(async { indexer.update_file(&state, &update_file, root).await.unwrap() });
+            rt.block_on(async {
+                indexer
+                    .update_file(&state, &update_file, root)
+                    .await
+                    .unwrap()
+            });
             black_box(())
         });
     });

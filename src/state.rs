@@ -12,10 +12,10 @@ use lasso::ThreadedRodeo;
 use parking_lot::RwLock;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 #[cfg(feature = "semantic")]
 use std::sync::OnceLock;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 /// Thread-safe string interner for symbol names.

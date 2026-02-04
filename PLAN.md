@@ -658,7 +658,8 @@ omni/
 ├── README.md               # User documentation
 ├── docs/vision/
 │   └── ARCHITECTURE.md     # Full architectural vision (aspirational)
-├── .github/workflows/      # CI configuration
+├── scripts/
+│   └── pre-commit          # Pre-commit hook (format, clippy, tests)
 ├── src/
 │   ├── lib.rs              # Library entry, re-exports (83 lines)
 │   ├── main.rs             # MCP server binary entry (17 lines)
