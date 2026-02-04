@@ -1,14 +1,33 @@
 # Omni Index
 
-Omni is a fast index and query tool for code. It is built for agents and automation.
+A fast, deterministic BM25 index and query tool for AI agents.
 
 ## What It Does
 
 - Incrementally indexes a repo with sane ignore defaults
 - Ranks results with BM25 over symbol spans
 - Returns byte offsets and 1-based line and column numbers
-- Exposes the same query engine via MCP
 - Emits deterministic JSON with `--json`
+
+## Core Contract (Stable)
+
+These commands and their JSON schemas are stable. Claudette depends on this interface.
+
+| Command | Schema |
+|---------|--------|
+| `omni index --json` | `{ ok, type: "index", files, symbols, ... }` |
+| `omni search <query> -w <workspace> -n <limit> --json` | `{ ok, type: "search", results: [...] }` |
+
+Search result schema:
+```json
+{
+  "symbol": "crate::module::function_name",
+  "kind": "symbol",
+  "file": "src/module.rs",
+  "line": 42,
+  "score": 6.42
+}
+```
 
 ## Quick Start
 
@@ -18,8 +37,11 @@ cargo build --release
 # Index a repo
 ./target/release/omni index --root /path/to/repo
 
-# Query the index
-./target/release/omni query --root /path/to/repo "parse config"
+# Search the index (Claudette interface)
+./target/release/omni search "parse config" -w /path/to/repo -n 10 --json
+
+# Query with filters
+./target/release/omni query "token" --root /path/to/repo --top-k 20
 ```
 
 ## CLI Usage
@@ -39,10 +61,18 @@ Options:
 - `--include-large` includes large files
 - `--max-file-size BYTES` sets the size cap
 
+### Search (Primary Interface)
+
+```bash
+omni search <query> -w <workspace> -n <limit> --json
+```
+
+This is the primary interface for AI agents like Claudette. The `-w` flag is a short form specific to the search command. Other commands use `--root` or `--workspace` (global alias).
+
 ### Query
 
 ```bash
-omni query --root /path/to/repo "token" --top-k 20
+omni query <query> --root /path/to/repo --top-k 20
 ```
 
 Filters:
@@ -54,47 +84,34 @@ You can pass filters inline in the query or with `--filters`.
 
 ### JSON Output
 
-All commands support `--json`.
+All commands support `--json` for machine-readable output.
 
-Success shape:
+## Other Commands (Non-Core)
 
-```json
-{
-  "ok": true,
-  "type": "query",
-  "root": "/path/to/repo",
-  "query": "parse config",
-  "top_k": 10,
-  "results": [
-    {
-      "doc_id": 12,
-      "symbol": "crate::config::load",
-      "file": "src/config.rs",
-      "start_byte": 120,
-      "end_byte": 402,
-      "start_line": 9,
-      "end_line": 24,
-      "start_col": 1,
-      "end_col": 3,
-      "score": 6.42,
-      "preview": "fn load_config(...)"
-    }
-  ]
-}
+These commands may change in future versions:
+
+- `omni query` - BM25 search with filters (similar to search)
+- `omni symbol` - Symbol lookup
+- `omni calls` - Call graph queries
+- `omni analyze dead-code` - Dead code analysis (requires `--features analysis`)
+- `omni export` - Engram export
+- `omni-server` - MCP server (requires `--features mcp`)
+
+## Building
+
+```bash
+# Full build (all features, default)
+cargo build --release
+
+# Slim build (CLI only, no MCP/semantic)
+cargo build --release --no-default-features --features core
 ```
 
-Error shape:
-
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "invalid_query",
-    "message": "Query must include search terms",
-    "details": null
-  }
-}
-```
+| Profile | Features | Use Case |
+|---------|----------|----------|
+| Slim | `core` | Claudette integration, minimal footprint |
+| Standard | `core,analysis` | + dead code analysis |
+| Full | default (all) | + MCP server, semantic search |
 
 ## Default Excludes
 
@@ -120,11 +137,12 @@ The index is stored under `.omni/` in the repo root:
 
 Use `omni index --force` to rebuild.
 
-## MCP Server
+## MCP Server (Experimental)
 
-Run the MCP server:
+Requires building with `--features mcp`:
 
 ```bash
+cargo build --release --features mcp
 export OCI_WORKSPACE=/path/to/repo
 ./target/release/omni-server
 ```
@@ -146,16 +164,35 @@ Search via MCP:
 }
 ```
 
-The MCP search returns the same JSON schema as the CLI query.
-
 ## Tests
 
 ```bash
+# Contract tests only (Claudette interface, core build)
+cargo test --no-default-features --features core --test contract_test
+
+# Full test suite
 cargo test
 ```
 
-## Roadmap
+Test organization:
 
-- Semantic search and hybrid ranking
-- Chunk indexing for non symbol text
-- Highlight extraction
+| Test File | Runs In | Purpose |
+|-----------|---------|---------|
+| `contract_test.rs` | core, full | Claudette contract (search + index) |
+| `cli_compat_test.rs` | full only | CLI convenience (non-contract) |
+| `error_handling_test.rs` | full only | Error behavior (non-contract) |
+| `comparative_test.rs`, `property_tests.rs` | full only | Feature tests (analysis/intervention) |
+
+### Pre-commit Hook
+
+Enforce contract stability with a pre-commit hook:
+
+```bash
+ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+```
+
+The hook runs contract tests in core build before each commit.
+
+## Architecture
+
+See [docs/vision/ARCHITECTURE.md](docs/vision/ARCHITECTURE.md) for the full architectural vision.

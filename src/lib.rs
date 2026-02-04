@@ -47,6 +47,7 @@
 //! let results = state.find_by_name("my_function");
 //! ```
 
+// Core modules (always available)
 pub mod cache;
 pub mod discovery;
 pub mod export;
@@ -54,33 +55,43 @@ pub mod fold;
 pub mod incremental;
 pub mod parsing;
 pub mod query;
+pub mod search;
 pub mod state;
 pub mod topology;
 pub mod types;
 
-// Phase 3+
+// Optional modules (feature-gated)
+#[cfg(feature = "analysis")]
 pub mod analysis;
+#[cfg(feature = "context")]
 pub mod context;
+#[cfg(feature = "intervention")]
 pub mod intervention;
+#[cfg(feature = "mcp")]
 pub mod mcp;
-pub mod search;
+#[cfg(feature = "semantic")]
 pub mod semantic;
 
-// Re-exports
-pub use analysis::DeadCodeAnalyzer;
+// Re-exports (core - always available)
 pub use cache::{FileFingerprint, IndexManifest};
-pub use context::{ContextChunk, ContextQuery, ContextResult, ContextSynthesizer};
 pub use discovery::FileDiscovery;
 pub use fold::{FunctionSignature, fold_to_signatures, parse_single_file};
 pub use incremental::IncrementalIndexer;
 pub use incremental::{IndexOptions, IndexReport};
-pub use intervention::InterventionEngine;
 pub use query::{QueryFilters, QueryResponse, QueryResult, SearchDoc, SearchIndex, SearchState};
 pub use search::{
     Bm25Index, HybridSearch, HybridSearchConfig, HybridSearchResult, SearchQualityMetrics,
 };
 pub use state::{IndexStats, OciState, SharedState, create_state};
 pub use types::*;
+
+// Re-exports (feature-gated)
+#[cfg(feature = "analysis")]
+pub use analysis::DeadCodeAnalyzer;
+#[cfg(feature = "context")]
+pub use context::{ContextChunk, ContextQuery, ContextResult, ContextSynthesizer};
+#[cfg(feature = "intervention")]
+pub use intervention::InterventionEngine;
 
 /// Server name for MCP.
 pub const SERVER_NAME: &str = "omni-index";

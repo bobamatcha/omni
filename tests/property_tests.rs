@@ -273,15 +273,17 @@ proptest! {
 }
 
 // ============================================================================
-// Intervention Engine Property Tests
+// Intervention Engine Property Tests (requires intervention feature)
 // ============================================================================
 
+#[cfg(feature = "intervention")]
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(30))]
 
     /// Property: Similarity scores are always between 0 and 1
     #[test]
     fn similarity_scores_bounded(sig in function_signature()) {
+        use omni_index::InterventionEngine;
         let state = OciState::new(PathBuf::from("/test"));
 
         // Add some symbols first
@@ -330,6 +332,7 @@ proptest! {
     /// Property: Empty state returns no duplicates
     #[test]
     fn empty_state_no_duplicates(sig in function_signature()) {
+        use omni_index::InterventionEngine;
         let state = OciState::new(PathBuf::from("/test"));
 
         let matches = InterventionEngine::detect_duplication(&state, &sig);
@@ -539,9 +542,10 @@ proptest! {
 }
 
 // ============================================================================
-// Dead Code Analysis Property Tests
+// Dead Code Analysis Property Tests (requires analysis feature)
 // ============================================================================
 
+#[cfg(feature = "analysis")]
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(20))]
 

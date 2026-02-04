@@ -6,10 +6,16 @@
 //! Run with: cargo test --test comparative_test -- --nocapture
 //!
 //! For benchmarks comparing both: cargo bench --bench comparative
+//!
+//! Note: Some tests require optional features (analysis, intervention).
 
-use omni_index::{
-    DeadCodeAnalyzer, IncrementalIndexer, InterventionEngine, SymbolKind, create_state,
-};
+use omni_index::{IncrementalIndexer, SymbolKind, create_state};
+
+#[cfg(feature = "analysis")]
+use omni_index::DeadCodeAnalyzer;
+
+#[cfg(feature = "intervention")]
+use omni_index::InterventionEngine;
 use std::fs;
 use std::time::Instant;
 use tempfile::TempDir;
@@ -518,6 +524,7 @@ fn test_scoped_name_resolution() {
 /// Test: Dead code detection
 /// OCI provides dead code analysis that code-index doesn't have
 #[test]
+#[cfg(feature = "analysis")]
 fn test_dead_code_detection() {
     let temp = create_realistic_codebase();
     let state = create_state(temp.path().to_path_buf());
@@ -544,6 +551,7 @@ fn test_dead_code_detection() {
 /// Test: Intervention engine (duplicate detection)
 /// OCI provides proactive duplicate detection that code-index doesn't
 #[test]
+#[cfg(feature = "intervention")]
 fn test_intervention_duplicate_detection() {
     let temp = create_realistic_codebase();
     let state = create_state(temp.path().to_path_buf());

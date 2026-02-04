@@ -30,7 +30,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use omni_index::export::export_engram_memory;
 use omni_index::query::{QueryResponse, execute_query, load_search_index, parse_query_filters};
-use omni_index::{DeadCodeAnalyzer, IncrementalIndexer, IndexOptions, SymbolDef, create_state};
+use omni_index::{IncrementalIndexer, IndexOptions, SymbolDef, create_state};
+#[cfg(feature = "analysis")]
+use omni_index::DeadCodeAnalyzer;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -54,7 +56,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Root directory to analyze
+    /// Root directory to analyze (alias: --workspace)
     #[arg(short, long, global = true, default_value = ".", alias = "workspace")]
     root: PathBuf,
 
@@ -160,6 +162,20 @@ enum Commands {
         /// Max symbols to include in the summary
         #[arg(long, default_value = "40")]
         max_symbols: usize,
+    },
+
+    /// Search the index (Claudette interface)
+    Search {
+        /// Search query
+        query: String,
+
+        /// Workspace path (overrides --root for this command)
+        #[arg(short = 'w')]
+        workspace: Option<PathBuf>,
+
+        /// Maximum results
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
     },
 }
 
@@ -361,6 +377,7 @@ async fn run_command(cli: &Cli, root: &std::path::Path) -> Result<Output> {
             })
         }
 
+        #[cfg(feature = "analysis")]
         Commands::Analyze { analysis_type } => match analysis_type.as_str() {
             "dead-code" => {
                 indexer.full_index(&state, root).await?;
@@ -389,6 +406,12 @@ async fn run_command(cli: &Cli, root: &std::path::Path) -> Result<Output> {
                 other
             )),
         },
+
+        #[cfg(not(feature = "analysis"))]
+        Commands::Analyze { .. } => Err(anyhow::anyhow!(
+            "Analysis requires the 'analysis' feature.\n\
+             Rebuild with: cargo build --features analysis"
+        )),
         Commands::Export {
             format,
             max_files,
@@ -405,6 +428,55 @@ async fn run_command(cli: &Cli, root: &std::path::Path) -> Result<Output> {
                     other
                 )),
             }
+        }
+
+        Commands::Search {
+            query,
+            workspace,
+            limit,
+        } => {
+            // Resolve workspace: -w flag overrides global --root
+            let search_root = workspace.as_ref().unwrap_or(&cli.root);
+            let search_root = search_root.canonicalize().unwrap_or_else(|_| search_root.clone());
+
+            // Delegate to query logic
+            let (query_text, parsed_filters) = parse_query_filters(query, &[]);
+            if query_text.trim().is_empty() {
+                return Err(CliError::invalid_query("Query must include search terms").into());
+            }
+
+            let search_state = create_state(search_root.clone());
+            let mut index = load_search_index(&search_root)?;
+            if index.is_none() {
+                if !cli.json {
+                    eprintln!("Index not found. Building index...");
+                }
+                indexer
+                    .index(&search_state, &search_root, &IndexOptions::default())
+                    .await?;
+                index = load_search_index(&search_root)?;
+            }
+
+            let Some(index) = index else {
+                return Err(CliError::index_missing("Index not found; run `omni index`").into());
+            };
+
+            let response = execute_query(&index, &query_text, *limit, &parsed_filters);
+
+            // Return in Search-specific format for backward compat
+            Ok(Output::Search {
+                results: response
+                    .results
+                    .into_iter()
+                    .map(|r| SearchResult {
+                        symbol: r.symbol,
+                        kind: "symbol".to_string(), // Default kind since QueryResult doesn't have it
+                        file: r.file,
+                        line: r.start_line,
+                        score: r.score,
+                    })
+                    .collect(),
+            })
         }
     }
 }
@@ -436,12 +508,16 @@ enum Output {
         direction: String,
         results: Vec<CallResult>,
     },
+    #[cfg(feature = "analysis")]
     DeadCode {
         dead_count: usize,
         symbols: Vec<SymbolResult>,
     },
     ExportEngram {
         export: omni_index::export::EngramMemoryExport,
+    },
+    Search {
+        results: Vec<SearchResult>,
     },
 }
 
@@ -537,6 +613,15 @@ struct CallResult {
     line: usize,
 }
 
+#[derive(serde::Serialize)]
+struct SearchResult {
+    symbol: String,
+    kind: String,
+    file: String,
+    line: usize,
+    score: f32,
+}
+
 fn print_human_readable(output: &Output) {
     match output {
         Output::Index {
@@ -591,6 +676,7 @@ fn print_human_readable(output: &Output) {
                 println!("  {} -> {} at {}:{}", c.caller, c.callee, c.file, c.line);
             }
         }
+        #[cfg(feature = "analysis")]
         Output::DeadCode {
             dead_count,
             symbols,
@@ -606,6 +692,12 @@ fn print_human_readable(output: &Output) {
         }
         Output::ExportEngram { export } => {
             println!("{}", export.content);
+        }
+        Output::Search { results } => {
+            println!("Found {} results:", results.len());
+            for r in results {
+                println!("  {:.2} {} ({}) at {}:{}", r.score, r.symbol, r.kind, r.file, r.line);
+            }
         }
     }
 }

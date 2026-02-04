@@ -1,0 +1,11 @@
+#!/bin/bash
+# Pre-commit hook: Verify Claudette contract tests pass in core build.
+#
+# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+
+set -e
+
+echo "Running contract tests (core build)..."
+cargo test --no-default-features --features core --test contract_test --quiet
+
+echo "Contract tests passed."

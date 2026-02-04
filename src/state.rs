@@ -4,6 +4,7 @@
 //! for concurrent queries and updates.
 
 use crate::search::Bm25Index;
+#[cfg(feature = "semantic")]
 use crate::semantic::SemanticIndex;
 use crate::types::*;
 use dashmap::DashMap;
@@ -12,7 +13,9 @@ use parking_lot::RwLock;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, OnceLock};
+#[cfg(feature = "semantic")]
+use std::sync::OnceLock;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Thread-safe string interner for symbol names.
@@ -45,9 +48,10 @@ pub struct OciState {
     pub imports: DashMap<FileId, Vec<ImportInfo>>,
 
     // ========================================================================
-    // Layer 3: Semantic Embeddings (lazy)
+    // Layer 3: Semantic Embeddings (lazy, requires 'semantic' feature)
     // ========================================================================
     /// Semantic index, built on demand
+    #[cfg(feature = "semantic")]
     pub semantic_index: OnceLock<SemanticIndex>,
 
     // ========================================================================
@@ -100,6 +104,7 @@ impl OciState {
             imports: DashMap::new(),
 
             // Layer 3
+            #[cfg(feature = "semantic")]
             semantic_index: OnceLock::new(),
 
             // Files
@@ -265,7 +270,10 @@ impl OciState {
             symbol_count: self.symbol_count.load(Ordering::SeqCst),
             call_edge_count: self.call_edges.read().len() as u32,
             topology_node_count: self.topology.read().node_count() as u32,
+            #[cfg(feature = "semantic")]
             has_semantic_index: self.semantic_index.get().is_some(),
+            #[cfg(not(feature = "semantic"))]
+            has_semantic_index: false,
             has_bm25_index: self.bm25_index.read().is_some(),
         }
     }

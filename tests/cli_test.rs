@@ -101,6 +101,7 @@ fn test_json_output() {
 }
 
 #[test]
+#[cfg(feature = "analysis")]
 fn test_dead_code_analysis() {
     let _ = run_cli(&["index", "--root", env!("CARGO_MANIFEST_DIR")]);
 

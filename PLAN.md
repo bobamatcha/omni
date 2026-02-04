@@ -4,7 +4,7 @@
 
 ## Overview
 
-This plan implements the Omniscient Code Index (OCI) as described in `RESEARCH.md`. The OCI is designed to replace the existing `code-index` tool in `AG1337/tools/` with an enhanced MCP server that provides:
+This plan implements the Omniscient Code Index (OCI) as described in `docs/vision/ARCHITECTURE.md`. The OCI is designed to replace the existing `code-index` tool in `AG1337/tools/` with an enhanced MCP server that provides:
 
 1. **Three-Layer Hybrid Graph**: Module Topology, Symbol Resolution (Stack Graphs), Semantic Embeddings
 2. **Active Intervention**: Detect semantic duplicates before code is written
@@ -653,10 +653,11 @@ All criteria met or exceeded:
 omni/
 ├── Cargo.toml              # Project manifest
 ├── Cargo.lock              # Dependency lock
-├── RESEARCH.md             # Architectural specification
 ├── PLAN.md                 # This implementation plan
 ├── CLAUDE.md               # Context for AI agents
 ├── README.md               # User documentation
+├── docs/vision/
+│   └── ARCHITECTURE.md     # Full architectural vision (aspirational)
 ├── .github/workflows/      # CI configuration
 ├── src/
 │   ├── lib.rs              # Library entry, re-exports (83 lines)

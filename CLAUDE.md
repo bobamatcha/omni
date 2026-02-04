@@ -4,22 +4,42 @@ This file provides context for AI agents working with the OCI codebase.
 
 ## Project Overview
 
-**OCI** is a semantic, interventionist code indexer designed specifically for AI coding agents. It provides deep code understanding through a three-layer hybrid graph architecture, going beyond what traditional LSPs offer.
+**OCI** is a fast BM25 code index for AI coding agents. It provides:
+- Incremental indexing with deterministic output
+- Symbol lookup and call graph traversal
+- Dead code detection (optional feature)
 
-### Target Use Cases
+### Primary Integration: CLI
 
-This project is designed around two primary use cases (neither of which are included in this repo, but drive its design):
+The core contract for Claudette and other AI agents:
 
-1. **AI Coding Agents**: The primary use case. OCI serves as the "code intelligence backend" for autonomous coding agents like Claude Code, providing symbol lookup, call graph traversal, dead code detection, and semantic search. The agent uses OCI to understand existing code before generating new code.
+```bash
+omni search <query> --json -w <workspace> -n <limit>
+```
 
-2. **GitHub PR Reviewer**: A WIP use case similar to CodeRabbit, but with a smaller binary footprint. OCI provides the code understanding layer that enables a PR reviewer to understand the context of changes, detect potential duplicates, and suggest improvements.
+Expected JSON schema:
+```json
+{
+  "ok": true,
+  "type": "search",
+  "results": [{ "symbol": "...", "kind": "...", "file": "...", "line": N, "score": N.N }]
+}
+```
+
+### Optional: MCP Server
+
+Build with `--features mcp` for MCP protocol support:
+```bash
+export OCI_WORKSPACE=/path/to/repo
+./target/release/omni-server
+```
 
 ## Architecture
 
 OCI maintains three interconnected graph layers:
 
 ```
-Layer 3: Semantic Embeddings  - Vector similarity for duplicate detection
+Layer 3: Semantic Embeddings  - Vector similarity for duplicate detection (optional)
 Layer 2: Symbol Resolution    - Functions, structs, call graph
 Layer 1: Module Topology      - Crates, modules, files with PageRank
 ```
@@ -29,29 +49,34 @@ Layer 1: Module Topology      - Crates, modules, files with PageRank
 | File | Purpose | Lines |
 |------|---------|-------|
 | `src/parsing/rust.rs` | Rust AST parsing with Tree-sitter | 1,110 |
-| `src/mcp/mod.rs` | MCP server implementation | 740 |
-| `src/context/mod.rs` | Context synthesis for LLMs | 615 |
-| `src/intervention/mod.rs` | Duplicate detection | 570 |
+| `src/mcp/mod.rs` | MCP server implementation (optional) | 740 |
+| `src/context/mod.rs` | Context synthesis for LLMs (optional) | 615 |
+| `src/intervention/mod.rs` | Duplicate detection (optional) | 570 |
 | `src/search/bm25.rs` | BM25 text search | 521 |
 | `src/topology.rs` | Module graph + PageRank | 505 |
-| `src/analysis/coverage.rs` | Test coverage correlation | 460 |
+| `src/analysis/coverage.rs` | Test coverage correlation (optional) | 460 |
 | `src/fold.rs` | Code folding utilities | 438 |
-| `src/analysis/dead_code.rs` | Dead code analysis | 404 |
+| `src/analysis/dead_code.rs` | Dead code analysis (optional) | 404 |
 | `src/search/mod.rs` | Hybrid search orchestration | 401 |
 
 ## How to Work With This Codebase
 
 ### Building
+
 ```bash
+# Full build (all features)
 cargo build --release
+
+# Slim build (core CLI only)
+cargo build --release --no-default-features --features core
 ```
 
 ### Testing
 ```bash
-cargo test                      # All 78 tests
-cargo test --lib                # Unit tests only (46)
-cargo test --test property_tests    # Property tests (19)
-cargo test --test comparative_test  # Comparative tests (13)
+cargo test                          # All tests
+cargo test --test contract_test     # Contract tests (stable JSON schema)
+cargo test --test property_tests    # Property tests
+cargo test --test comparative_test  # Comparative tests
 ```
 
 ### Running the MCP Server
@@ -60,8 +85,6 @@ export OCI_WORKSPACE=/path/to/repo
 ./target/release/omni-server
 ```
 
-The server communicates via JSON-RPC 2.0 over stdio.
-
 ### Benchmarking
 ```bash
 cargo bench --bench indexing        # Performance benchmarks
@@ -69,10 +92,23 @@ cargo bench --bench comparative     # OCI vs code-index
 cargo bench --bench search_quality  # BM25 vs Semantic vs Hybrid
 ```
 
+## Feature Flags
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| `core` | BM25 search, indexing, CLI | Always available |
+| `analysis` | Dead code analysis | - |
+| `context` | Context synthesis | - |
+| `intervention` | Duplicate detection | strsim |
+| `mcp` | MCP server | rmcp, schemars |
+| `semantic` | Vector embeddings | fastembed, instant-distance |
+
+Default: All features enabled for backwards compatibility.
+
 ## Design Patterns Used
 
 ### String Interning
-All symbol names use `lasso::ThreadedRodeo` for memory efficiency. Look up by `Spur` key, resolve back to `&str` when needed.
+All symbol names use `lasso::ThreadedRodeo` for memory efficiency.
 
 ### Thread-Safe State
 - `DashMap` for concurrent symbol lookup
@@ -80,23 +116,10 @@ All symbol names use `lasso::ThreadedRodeo` for memory efficiency. Look up by `S
 - `Arc` for shared state across async tasks
 
 ### Lazy Initialization
-Both BM25 and semantic indexes use `OnceLock` - only built on first search, not during indexing.
+Both BM25 and semantic indexes use `OnceLock` - only built on first search.
 
 ### Incremental Parsing
 Tree-sitter enables partial re-parsing. Only changed files are re-indexed.
-
-## MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `index` | Build/rebuild/status index |
-| `find_symbol` | Find symbol definitions by name |
-| `find_calls` | Query callers/callees |
-| `analyze` | Dead code, coverage, churn |
-| `search` | Hybrid BM25 + semantic search |
-| `context` | Generate context for a location |
-| `intervention` | Check for duplicates |
-| `topology` | Query module graph |
 
 ## Common Tasks
 
@@ -121,7 +144,7 @@ Tree-sitter enables partial re-parsing. Only changed files are re-indexed.
 - **Rust-only**: Only Rust parser implemented (TypeScript/Python deferred)
 - **No file watching**: External process must trigger re-indexing
 - **No virtual resources**: MCP resources interface not implemented
-- **No binary quantization**: Embeddings use full float32 (32x memory vs quantized)
+- **No binary quantization**: Embeddings use full float32
 
 ## Performance Characteristics
 
@@ -146,12 +169,13 @@ The codebase uses:
 - **Unit tests**: In each module, test individual functions
 - **Property tests**: Verify invariants hold for random inputs (proptest)
 - **Comparative tests**: Ensure feature parity with code-index
+- **Contract tests**: Verify stable JSON schema for Claudette
 
 ## Related Documentation
 
-- `RESEARCH.md` - Architectural specification and theory
+- `docs/vision/ARCHITECTURE.md` - Full architectural vision
 - `PLAN.md` - Implementation plan with phase status
-- `README.md` - User-facing documentation
+- `README.md` - User-facing documentation with core contract
 
 ## Installed Skills
 - @.claude/skills/suggest-tests/SKILL.md

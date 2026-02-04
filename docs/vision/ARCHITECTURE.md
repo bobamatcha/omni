@@ -1,10 +1,12 @@
 # The Omniscient Context Engine
 
+> **This document is aspirational.** It describes the full architectural vision, not all of which is implemented. See README.md for currently implemented features and the stable CLI contract.
+
 ## Architectural Specification for a Semantic, Interventionist Code Index in Rust
 
 ---
 
-> **Implementation Status**: This specification has been **fully implemented** in the OCI codebase. See `PLAN.md` for phase completion details and `README.md` for usage instructions.
+> **Implementation Status**: Core features (BM25 search, incremental indexing, symbol extraction) are implemented. Some aspirational features (binary quantization, multi-language parsers, MCP resources) are not yet implemented. See `PLAN.md` for phase details.
 
 ---
 
@@ -342,13 +344,24 @@ It satisfies the "killer feature" requirement not by merely indexing code, but b
 
 ## 9. Implementation Status
 
-All phases outlined in this specification have been **completed**:
+**Core features implemented:**
 
-1. **MCP Server**: Fully implemented using `rmcp` crate with 8 tools exposed via Model Context Protocol
-2. **Graph Integration**: Tree-sitter Rust parser with complete symbol, call graph, and import extraction (1,110 lines)
-3. **Semantic Layer**: `fastembed` integration with AllMiniLM-L6-v2 and HNSW indexing
-4. **Intervention Logic**: Duplicate detection via signature similarity and naming conflict warnings
-5. **Quality Analysis**: Dead code analysis, test coverage correlation, and git churn tracking
+1. **CLI**: BM25 search (`omni search`), incremental indexing (`omni index`)
+2. **Graph Integration**: Tree-sitter Rust parser with symbol, call graph, and import extraction
+3. **Quality Analysis**: Dead code analysis, test coverage correlation, git churn tracking
+
+**Optional features (require feature flags):**
+
+4. **MCP Server** (`--features mcp`): rmcp-based server with 8 tools
+5. **Semantic Layer** (`--features semantic`): fastembed with AllMiniLM-L6-v2 and HNSW indexing
+6. **Intervention Logic** (`--features intervention`): Duplicate detection via signature similarity
+
+**Not implemented (aspirational):**
+
+- Binary vector quantization
+- TypeScript/Python parsers (Rust-only currently)
+- MCP virtual resources
+- Real-time file watching
 
 See `PLAN.md` for detailed phase-by-phase implementation notes.
 
