@@ -401,13 +401,14 @@ fn bench_incremental_update(c: &mut Criterion) {
     let remove_file = temp.path().join("src/module_10.rs");
 
     // Single file update (most common IDE operation)
+    let root = temp.path();
     group.bench_function("update_single_file", |b| {
         b.iter(|| {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(async { indexer.update_file(&state, &update_file).await.unwrap() });
+            rt.block_on(async { indexer.update_file(&state, &update_file, root).await.unwrap() });
             black_box(())
         });
     });
@@ -506,7 +507,8 @@ fn bench_topology(c: &mut Criterion) {
 
     for files in [10, 30, 50, 100] {
         let (temp, _) = create_test_repo(files, 50);
-        let state = create_state(temp.path().to_path_buf());
+        let root = temp.path();
+        let state = create_state(root.to_path_buf());
         let indexer = IncrementalIndexer::new();
 
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -517,9 +519,9 @@ fn bench_topology(c: &mut Criterion) {
         // Index files without topology
         rt.block_on(async {
             let discovery = FileDiscovery::new();
-            let files = discovery.discover(temp.path()).unwrap();
+            let files = discovery.discover(root).unwrap();
             for file in &files {
-                indexer.index_file(&state, file).await.ok();
+                indexer.index_file(&state, file, root).await.ok();
             }
         });
 

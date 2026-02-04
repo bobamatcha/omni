@@ -10,7 +10,6 @@ use omni_index::search::{
     Bm25Index, Bm25Params, FieldWeights, FoundBy, HybridSearch, extract_doc_comments,
     extract_identifiers, extract_string_literals, path_tokens,
 };
-use omni_index::types::InternedString;
 use std::collections::HashMap;
 
 /// Test case for search quality evaluation.
@@ -34,8 +33,11 @@ enum SearchWeakness {
 }
 
 /// Create a test corpus with known symbols.
-fn create_test_corpus() -> (lasso::ThreadedRodeo, Vec<(InternedString, String, String)>) {
-    let interner = lasso::ThreadedRodeo::new();
+/// Returns (name_to_doc_id mapping, doc_id_to_name mapping, symbols as (doc_id, path, code))
+#[allow(clippy::type_complexity)]
+fn create_test_corpus() -> (HashMap<String, u32>, Vec<String>, Vec<(u32, String, String)>) {
+    let mut name_to_id: HashMap<String, u32> = HashMap::new();
+    let mut id_to_name: Vec<String> = Vec::new();
 
     // Each entry: (symbol, path, code)
     let entries = vec![
@@ -207,22 +209,21 @@ pub fn hash_password(password: &str) -> Result<String, HashError> {
     ];
 
     let mut symbols = Vec::new();
-    for (name, path, code) in entries {
-        let sym = InternedString::from(interner.get_or_intern(name));
-        symbols.push((sym, path.to_string(), code.to_string()));
+    for (doc_id, (name, path, code)) in entries.into_iter().enumerate() {
+        let doc_id = doc_id as u32;
+        name_to_id.insert(name.to_string(), doc_id);
+        id_to_name.push(name.to_string());
+        symbols.push((doc_id, path.to_string(), code.to_string()));
     }
 
-    (interner, symbols)
+    (name_to_id, id_to_name, symbols)
 }
 
 /// Build a BM25 index from the test corpus.
-fn build_bm25_index(
-    _interner: &lasso::ThreadedRodeo,
-    symbols: &[(InternedString, String, String)],
-) -> Bm25Index {
+fn build_bm25_index(symbols: &[(u32, String, String)]) -> Bm25Index {
     let mut index = Bm25Index::new();
 
-    for (sym, path, code) in symbols {
+    for (doc_id, path, code) in symbols {
         let path_toks = path_tokens(std::path::Path::new(path));
         let ident_toks = extract_identifiers(code);
         let doc_comments = extract_doc_comments(code);
@@ -233,7 +234,7 @@ fn build_bm25_index(
         let string_toks = extract_string_literals(code);
 
         index.add_document(
-            *sym,
+            *doc_id,
             path_toks.iter().map(|s| s.as_str()),
             ident_toks,
             doc_toks,
@@ -247,12 +248,12 @@ fn build_bm25_index(
 }
 
 /// Simulate semantic search results (in real usage, would come from embedding model).
-/// Returns symbols with cosine similarity scores.
+/// Returns doc_ids with cosine similarity scores.
 fn simulate_semantic_search(
     query: &str,
-    interner: &lasso::ThreadedRodeo,
+    name_to_id: &HashMap<String, u32>,
     top_k: usize,
-) -> Vec<(InternedString, f32)> {
+) -> Vec<(u32, f32)> {
     // Simulate semantic understanding with hand-crafted relevance
     // In production, this would be actual embedding similarity
 
@@ -333,9 +334,7 @@ fn simulate_semantic_search(
             return results
                 .iter()
                 .filter_map(|(name, score)| {
-                    interner
-                        .get(*name)
-                        .map(|spur| (InternedString::from(spur), *score))
+                    name_to_id.get(*name).map(|&doc_id| (doc_id, *score))
                 })
                 .take(top_k)
                 .collect();
@@ -390,8 +389,8 @@ fn test_cases() -> Vec<SearchTestCase> {
 
 /// Run quality evaluation and print results.
 fn evaluate_search_quality(c: &mut Criterion) {
-    let (interner, symbols) = create_test_corpus();
-    let bm25_index = build_bm25_index(&interner, &symbols);
+    let (name_to_id, _id_to_name, symbols) = create_test_corpus();
+    let bm25_index = build_bm25_index(&symbols);
     let hybrid = HybridSearch::with_default_config();
 
     let mut group = c.benchmark_group("search_quality");
@@ -405,11 +404,11 @@ fn evaluate_search_quality(c: &mut Criterion) {
         println!("  Tests: {:?}", test_case.tests);
         println!("  Expected: {:?}", test_case.relevant);
 
-        // Get relevant symbol IDs
-        let relevant_symbols: Vec<InternedString> = test_case
+        // Get relevant doc IDs
+        let relevant_doc_ids: Vec<u32> = test_case
             .relevant
             .iter()
-            .filter_map(|name| interner.get(*name))
+            .filter_map(|name| name_to_id.get(*name).copied())
             .collect();
 
         // BM25 only
@@ -419,30 +418,30 @@ fn evaluate_search_quality(c: &mut Criterion) {
             Bm25Params::default(),
             10,
         );
-        let bm25_found: Vec<_> = bm25_results.iter().map(|r| r.symbol).collect();
+        let bm25_found: Vec<_> = bm25_results.iter().map(|r| r.doc_id).collect();
 
         // Semantic only (simulated)
-        let semantic_results = simulate_semantic_search(test_case.query, &interner, 10);
-        let semantic_found: Vec<_> = semantic_results.iter().map(|(s, _)| *s).collect();
+        let semantic_results = simulate_semantic_search(test_case.query, &name_to_id, 10);
+        let semantic_found: Vec<_> = semantic_results.iter().map(|(id, _)| *id).collect();
 
         // Hybrid
-        let bm25_for_hybrid: Vec<_> = bm25_results.iter().map(|r| (r.symbol, r.score)).collect();
+        let bm25_for_hybrid: Vec<_> = bm25_results.iter().map(|r| (r.doc_id, r.score)).collect();
         let hybrid_results =
             hybrid.search(test_case.query, semantic_results.clone(), bm25_for_hybrid);
 
         // Calculate metrics
-        let bm25_mrr = calculate_mrr(&bm25_found, &relevant_symbols);
-        let semantic_mrr = calculate_mrr(&semantic_found, &relevant_symbols);
+        let bm25_mrr = calculate_mrr(&bm25_found, &relevant_doc_ids);
+        let semantic_mrr = calculate_mrr(&semantic_found, &relevant_doc_ids);
         let hybrid_mrr = calculate_mrr(
-            &hybrid_results.iter().map(|r| r.symbol).collect::<Vec<_>>(),
-            &relevant_symbols,
+            &hybrid_results.iter().map(|r| r.doc_id).collect::<Vec<_>>(),
+            &relevant_doc_ids,
         );
 
-        let bm25_recall = calculate_recall(&bm25_found, &relevant_symbols);
-        let semantic_recall = calculate_recall(&semantic_found, &relevant_symbols);
+        let bm25_recall = calculate_recall(&bm25_found, &relevant_doc_ids);
+        let semantic_recall = calculate_recall(&semantic_found, &relevant_doc_ids);
         let hybrid_recall = calculate_recall(
-            &hybrid_results.iter().map(|r| r.symbol).collect::<Vec<_>>(),
-            &relevant_symbols,
+            &hybrid_results.iter().map(|r| r.doc_id).collect::<Vec<_>>(),
+            &relevant_doc_ids,
         );
 
         // Count found by both in hybrid
@@ -503,11 +502,11 @@ fn evaluate_search_quality(c: &mut Criterion) {
             &test_case.query,
             |b, query| {
                 b.iter(|| {
-                    let semantic = simulate_semantic_search(query, &interner, 50);
+                    let semantic = simulate_semantic_search(query, &name_to_id, 50);
                     let bm25: Vec<_> = bm25_index
                         .search(query, &FieldWeights::default(), Bm25Params::default(), 50)
                         .iter()
-                        .map(|r| (r.symbol, r.score))
+                        .map(|r| (r.doc_id, r.score))
                         .collect();
                     hybrid.search(black_box(query), semantic, bm25)
                 })
@@ -529,7 +528,7 @@ fn evaluate_search_quality(c: &mut Criterion) {
     println!();
 }
 
-fn calculate_mrr(results: &[InternedString], relevant: &[InternedString]) -> f32 {
+fn calculate_mrr(results: &[u32], relevant: &[u32]) -> f32 {
     let relevant_set: std::collections::HashSet<_> = relevant.iter().copied().collect();
     results
         .iter()
@@ -539,7 +538,7 @@ fn calculate_mrr(results: &[InternedString], relevant: &[InternedString]) -> f32
         .unwrap_or(0.0)
 }
 
-fn calculate_recall(results: &[InternedString], relevant: &[InternedString]) -> f32 {
+fn calculate_recall(results: &[u32], relevant: &[u32]) -> f32 {
     if relevant.is_empty() {
         return 0.0;
     }

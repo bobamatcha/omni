@@ -1,6 +1,31 @@
 # Omni Index
 
+[![Crates.io](https://img.shields.io/crates/v/omni-index.svg)](https://crates.io/crates/omni-index)
+[![Documentation](https://docs.rs/omni-index/badge.svg)](https://docs.rs/omni-index)
+[![CI](https://github.com/bobamatcha/omni/actions/workflows/ci.yml/badge.svg)](https://github.com/bobamatcha/omni/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A fast, deterministic BM25 index and query tool for AI agents.
+
+## Installation
+
+### From crates.io
+
+```bash
+# Install the CLI
+cargo install omni-index
+
+# Or add as a library dependency
+cargo add omni-index
+```
+
+### From source
+
+```bash
+git clone https://github.com/bobamatcha/omni.git
+cd omni
+cargo build --release
+```
 
 ## What It Does
 

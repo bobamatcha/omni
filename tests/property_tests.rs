@@ -373,7 +373,7 @@ proptest! {
         for entry in state.topology_metrics.iter() {
             let score = entry.value().relevance_score;
             prop_assert!(
-                score >= 0.0 && score <= 1.0,
+                (0.0..=1.0).contains(&score),
                 "PageRank score {} not in [0, 1]",
                 score
             );

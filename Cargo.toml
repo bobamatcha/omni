@@ -3,6 +3,15 @@ name = "omni-index"
 version = "0.1.0"
 edition = "2024"
 description = "Omniscient Code Index - Semantic, interventionist code indexer for AI agents"
+authors = ["Amar Singh <asinghchrony@protonmail.com>"]
+license = "MIT"
+repository = "https://github.com/bobamatcha/omni"
+homepage = "https://github.com/bobamatcha/omni"
+documentation = "https://docs.rs/omni-index"
+readme = "README.md"
+keywords = ["code-index", "bm25", "search", "tree-sitter", "ai-tools"]
+categories = ["development-tools", "parser-implementations", "command-line-utilities"]
+rust-version = "1.85"
 
 [features]
 # Default: enable everything for backwards compatibility

@@ -431,13 +431,14 @@ fn bench_incremental(c: &mut Criterion) {
     let update_file = temp.path().join("src/module_25.rs");
 
     // Single file update
+    let root = temp.path();
     group.bench_function("update_single_file", |b| {
         b.iter(|| {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(async { indexer.update_file(&state, &update_file).await.unwrap() });
+            rt.block_on(async { indexer.update_file(&state, &update_file, root).await.unwrap() });
             black_box(())
         });
     });
